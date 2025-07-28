@@ -1,4 +1,4 @@
-# JaymieXu_homeworkAI_1
+# JaymieXu_homework_week1
 
 ## Part 1
 ### Brave search:
