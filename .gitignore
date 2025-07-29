@@ -1,2 +1,6 @@
 .idea/
 .venv/
+keys/
+cleaned_htmls/
+
+Week2/homework/bonus_hw_2/*.pdf
