@@ -1,0 +1,1042 @@
+arX1v:2507.20999v1 [cs.LG] 28 Jul 2025
+
+LoRA-PAR: A Flexible Dual-System LoRA Partitioning Approach to
+Efficient LLM Fine-Tuning
+
+Yining Huang", Bin Li‘, Keke Tang***, Meilian Chen’
+
+'School of Politics and Public Administration, South China Normal University
+Shenzhen Institute of Advanced Technology, Chinese Academy of Sciences
+3University of Chinese Academy of Sciences
+“Shenyang institute of computing technology, Chinese academy of sciences
+
+Correspondence: huangyining1987@ gmail.com
+
+Abstract
+
+Large-scale generative models like DeepSeek-
+RI and OpenAI-O1 benefit substantially from
+chain-of-thought (CoT) reasoning, yet push-
+ing their performance typically requires vast
+data, large model sizes, and full-parameter fine-
+tuning. While parameter-efficient fine-tuning
+(PEFT) helps reduce cost, most existing ap-
+proaches primarily address domain adaptation
+or layer-wise allocation rather than explicitly
+tailoring data and parameters to different re-
+sponse demands. Inspired by “Thinking, Fast
+and Slow,” which characterizes two distinct
+modes of thought—System 1 (fast, intuitive,
+often automatic) and System 2 (slower, more
+deliberative and analytic)—we draw an analogy
+that different “subregions” of an LLM’s param-
+eters might similarly specialize for tasks that
+demand quick, intuitive responses versus those
+requiring multi-step logical reasoning. There-
+fore, we propose LoRA-PAR, a dual-system
+LoRA framework that partitions both data and
+parameters by System | or System 2 demands,
+using fewer yet more focused parameters for
+each task. Specifically, we classify task data
+via multi-model role-playing and voting, and
+partition parameters based on importance scor-
+ing, then adopt a two-stage fine-tuning strategy
+of training System | tasks with supervised fine-
+tuning (SFT) to enhance knowledge and intu-
+ition and refine System 2 tasks with reinforce-
+ment learning (RL) to reinforce deeper logical
+deliberation next. Extensive experiments show
+that the two-stage fine-tuning strategy, SFT and
+RL, lowers active parameter usage while match-
+ing or surpassing SOTA PEFT baselines.
+
+1 Introduction
+
+Large language models (LLMs) such as DeepSeek-
+R1 (DeepSeek-AI et al., 2025) and OpenAI-O1
+
+“huangyining 1987 @ gmail.com
+*bli2@siat.ac.cn
+
+*tkk2012@ gmail.com
+§523062863 @qq.com
+
+‘Sample Splitter
+
+#model=(43,5,.)
+
+Difsystem1)
+
+© Multiple Models Role Playing & Voting
+
+Coordinator
+Dilsystemt)
+
+1 Freezed Params
+
+tance Caleuajon ,
+219;4,- 12,451
+
+@ Importance Calculation & Parameter Partitioning
+
+stage 1: SFT
+
+slsactivated
+
+stage 2: RL
+
+seed
+
+Corpus D Corpus D
+
+@2-stage Finetuning
+
+Figure 1: Overview of our proposed workflow. (1) Sam-
+ple Splitter: Multiple LLMs role-play the target model
+and vote to classify the corpus into System 1 and Sys-
+tem 2 data. (2) Coordinator: We calculate importance
+scores for each LoRA parameter in both tasks and selec-
+tively partition them based on cumulative ranking. (3) A
+two-stage fine-tuning pipeline (SFT then RL) trains the
+shared or task-specific parameters, ensuring efficiency
+while preserving both language fluency and logical rea-
+soning performance.
+
+(Contributors et al., 2024) have shown remarkable
+progress in complex reasoning when equipped with
+CoT prompts. However, pushing their performance
+to new levels often relies on massive datasets and
+full-parameter fine-tuning, requiring considerable
+compute and large model sizes. To alleviate this
+burden, parameter-efficient fine-tuning (PEFT) ap-
+proaches have emerged as a promising alternative.
+Most existing PEFT methods, however, predomi-
+nantly insert uniform adapter modules (e.g., LORA
+(Hu et al., 2021)) and do not specifically tailor their
+parameter configurations to the unique demands
+of different tasks or reasoning levels. Although
+
+Inspiration
+
+classifying tasks into System 1 and System 2.
+
+Multiple Advanced Models Role-
+
+Thinking, Fast & Slow
+
+Question Type 1 Question Type 2
+
+"Acar travels for 2 hours at 60
+
+play Classification & Voting
+
+~~ Y¥
+
+Data Type 2
+"Tom has 8 coins, and each coin is
+
+The human brain engages in fast and slow thinking. H 1 ini
+Ireur tamer wt niicthisenproseh by a plied in Training LLMs
+
+Data Type 1
+
+"Which is bri Role-playing "Whi i ;
+'Which is brighter, 3 : f 'Which number is either a penny (1 cent) ora nickel (5
+PM or 3AM?" km/h, then 1 hour at 80 km/h. } & Voting by larger, 10 or 5?" cents). f their total value is 32 cents,
+How far does it travel in total?’ { Multiple Experts how many nickels does Tom have?"
+Human Brain : LLM parameters
+System 1 System 2 ! Adopt parameters System 1 System 2
+a ne parton « (i)
+intuitive deliberative intuitive deliberative
+! partitioned base
+bal 4, 4-2, #1 ora eet CSD lor
+Pee Pal ge — wey for RL (System2):
+vi: ‘ vem
+Thinking mode = = = Thinking mode = = = 4 End2End SFT. » = == =ReasoningRL = = =4
+hoi ; ( guestion ) '
+' 1. Distance in the first 2hours: , | Train modelin the oueren : ee 1
+5 60X2=120km © ways that System Learning the af Lecxbe the number africa Then '
+© 2. Distance in thenext hour: " __1/2would think ee elngtrom a |. cachnicatisseentseach pemnyisa | 8
+= LJ question to cent, 1
+5 80x 1=80km : upenised Fine © ns Fs Soueegatonsees-e-ae| |
+3. Total distance = 120 + 80 = i directly. 4. Simplify: St+8— x= 32> 4x+8=32->
+1 ! : tuning 1 x= 24x26 '
+1 200km © 12. Reinforcement wo 1 an 1
+Meee eee Learning (GRPO) ‘Saeeeeeeenee
+Answer Answer: Answer Answer
+"Obviously 3 PM." So, the car travels 200 km in "10 is larger than 5." "Tom has 6 nickels."
+
+total.”
+
+Figure 2: Inspired by Thinking, Fast and Slow, we introduce System 1 and System 2 into LLM training. (1) We
+assume subregions of model parameters can mirror the brain’s distinct cognitive modes; (2) we classify data into
+System 1 or System 2 via expert role-play voting and allocate parameters accordingly, then parameters will be
+partitioned based on importance score with respect to different task data; and (3) we train System 1 with end-to-end
+SFT for direct mappings from question to answer, while System 2 uses RL (GRPO) to encourage multi-step
+
+reasoning.
+
+there have been some recent attempts to design
+more task- or data-aware PEFT solutions (Zhang
+et al., 2023a,b), these works largely focus on do-
+main adaptation or layer-wise parameter alloca-
+tion rather than explicitly targeting more advanced,
+multi-step reasoning capabilities.
+
+Meanwhile, inspired by Thinking, Fast and Slow
+(Kahneman, 2011), we incorporate the dual-system
+concept into parameter-efficient fine-tuning for
+LLMs. Specifically, as shown in Figure 2, we draw
+on the idea that the human brain engages partially
+distinct neural processes for System | versus Sys-
+tem 2. Recent studies further evidence that large
+language models can manifest or benefit from dis-
+tinct “fast” vs. “slow” modes: (Hagendorff et al.,
+2022) exhibit human-like intuitive biases, (Pan
+et al., 2024) propose dynamic decision mechanisms
+inspired by Kahneman’s framework, and more gen-
+eral discussions support bridging cognitive dual-
+process theories and AI (Booch et al., 2020). By
+
+analogy, we posit that an LLM’s parameters can be
+partitioned into “subregions” specialized for differ-
+ent response demands. We implement this in three
+steps: (1) we use multi-expert role-play and vot-
+ing to classify each training instance into System
+1 or System 2 tasks, ensuring quick, direct “fast
+thinking” problems are kept separate from more
+deliberative multi-step tasks; (2) we then allocate
+different subsets of parameters of LORA modules
+(via importance-based partitioning) for System 1
+and System 2, akin to activating distinct cognitive
+modes; (3) we train System 1 parameters with end-
+to-end SFT for direct question—answer mapping,
+and refine System 2 parameters using reinforce-
+ment learning (GRPO (Shao et al., 2024)), simi-
+lar to how models like DeepSeek-R1 (DeepSeek-
+Al et al., 2025) achieve deeper chain-of-thought
+style reasoning. In this way, our approach remains
+within the lightweight scope of PEFT, while still
+capturing the dual-process benefits of human cog-
+
+nition—fast, intuitive responses and methodical,
+step-by-step logic.
+
+2 Related Work
+
+2.1 Parameter Importance Calculation and
+Pruning
+
+SparseGPT (Frantar and Alistarh, 2023) effectively
+prunes large-scale LLM parameters without retrain-
+ing, drastically reducing model size with minimal
+performance loss. Wanda (Sun et al., 2023) em-
+ploys activation-aware magnitude pruning without
+retraining, significantly outperforming traditional
+magnitude-based methods. LLM-Pruner (Ma et al.,
+2023) identifies and removes structurally redundant
+components via gradient-based scoring, retaining
+general multitask capabilities. Tyr-the-Pruner (Li
+et al., 2025) applies second-order Taylor approx-
+imations for global structured pruning, achieving
+high sparsity levels with minimal accuracy loss.
+
+2.2 Selective Freezing and Dual-Stage
+Training
+
+LIMA (Zhou et al., 2023) shows minimal fine-
+tuning effectively aligns pretrained models, im-
+plying substantial portions of models can remain
+frozen without loss of knowledge. ILA (Shi et al.,
+2024) develops an analysis technique to selectively
+freeze non-critical layers, improving fine-tuning
+efficiency and performance. Safety Layer Freez-
+ing (Li et al., 2024) suggests freezing identified
+"safety-critical" layers during further fine-tuning to
+preserve original alignment and safety behaviors.
+
+2.3. LoRA and PEFT Variants
+
+LoRA (Hu et al., 2021) introduces low-rank adap-
+tation, drastically reducing fine-tuning overhead
+by freezing most parameters while updating small
+adapter matrices. PiSSA (Meng et al., 2024) ini-
+tializes LoRA adapters using pretrained singular
+vectors, accelerating convergence and boosting task
+accuracy. OLoRA (Biiyiikakyiiz, 2024) enhances
+LoRA initialization with orthonormal matrices,
+significantly accelerating fine-tuning convergence.
+QLoRA (Dettmers et al., 2023) enables highly ef-
+ficient 4-bit quantized fine-tuning of large models,
+drastically lowering computational requirements
+without performance loss. LoRA+ (Hayou et al.,
+2024) optimizes LoRA fine-tuning via learning-rate
+scaling adjustments, achieving faster convergence
+and higher accuracy.
+
+3 Method
+3.1 Overall Workflow
+
+The overall workflow of our proposal proceeds as
+follows. First, multiple teacher LLMs vote to la-
+bel each query as fast, single-step (System 1) or
+multi-step reasoning (System 2). Next, we com-
+pute parameter importance in LoRA and keep only
+the most cumulative-importance score parameters
+for each system, identifying a shared subset that are
+important to both. Finally, we apply a two-stage
+fine-tuning strategy, using SFT for System 1 tasks
+and RL for System 2. Shared parameters can be
+partially activated in both stages, controlled by a
+and 3. This design efficiently addresses “fast vs.
+slow thinking” within a single LLM by freezing
+irrelevant parameters and focusing updates on the
+most crucial subregions.
+
+3.2 Multi-Model Role-Play and Voting for
+Data Classification
+
+Before partitioning model parameters into different
+mode of thinking, questions are needed to be identi-
+fied to fall into which category. Rather than relying
+on a single classifier—which may be error-prone
+or biased—we design a multi-model role-playing
+approach. Here, several advanced LLMs (like the
+“teachers”) each act to be the “target” model (like
+the “student’”) and classify the questions accord-
+ingly. Because these teacher models typically have
+broader pretraining coverage, they can approxi-
+mate how the student would perceive the question
+type—either System 1 or System 2. The prompt
+of role-playing and example questions of System 1
+and System 2 are shown in Figure 3.
+
+As shown in the upper panel of Figure 1 (cf.
+“Sample Splitter”), each teacher independently
+provides a classification, and we then apply a
+voting procedure to aggregate these judgments.
+This ensures that disagreements—arising from the
+teachers’ differing architectures or training histo-
+ries—are resolved in a robust manner. The result-
+ing labeled subsets, D; (System 1) and Dy (System
+2), feed into the subsequent modules, where they
+guide parameter partitioning and two-stage train-
+ing.
+
+3.3. Parameter Importance Calculation for
+Subregion Partitioning
+
+After classifying questions, the next step is to deter-
+mine which LoRA parameters should be “activated”
+for each category. We adopt LoRA rather than full-
+
+Prompt for Classification
+Act as LLaMA2 7B — concise, efficient, and reasoning step by step
+like it would. Given a task or question and its answer, decide
+whether it belongs to 'System1' or 'System2' based on the
+following criteria:
+1.System1 tasks rely on immediate recall, straightforward reading
+comprehension, or simple inferences that do not require multi-
+step reasoning.
+2.System2 tasks require multi-step logical reasoning, chaining
+information, or complex inferential processes.
+
+— System1 question example
+What are the top graph
+databases?
+
+System2 question example.
+Ram was asked to repeat after
+the speaker. Speaker: Red,
+Ram: Red. Speaker: Blue, Ram:
+Blue. Speaker: Green, Ram:
+Green. Speaker: What's your
+name? , Ram: Ram
+
+What went wrong here?
+
+Figure 3: The prompt for classification and example
+questions of System 1 & System 2
+
+parameter fine-tuning to preserve the base model’s
+global knowledge and enable a modular strategy
+of activate or freeze for System 1 and System 2
+tasks. The partitioning process parallels how dif-
+ferent regions of the human brain are activated in
+response to different cognitive demands (Kahne-
+man, 2011). In large language models, parameter
+gradients serve as an analogue to neural activations.
+If the gradient for a certain parameter is large, it im-
+plies that parameter is critical in correcting output
+errors for a particular task. To improve the model’s
+ability to answer different types of questions (Sys-
+tem 1 or System 2), we apply a mask to ignore
+the prompt and context tokens in the loss computa-
+tion—i.e., we focus only on output positions. This
+ensures our importance scores emphasize each pa-
+rameter’s contribution to generating the correct fi-
+nal answer rather than merely modeling the prompt
+text.
+
+Computing Importance Scores. In practice,
+we attach LoRA modules at positions of
+Q/K/V/Gate/Up/Down within the target model lay-
+ers. Let @; denote an individual LoRA parameter.
+We measure its importance via a Taylor expansion
+of the masked cross-entropy loss L(-) up to second
+order:
+
+AL(o3) © |g 63 — 3 Fy, 9] a)
+Ob 1 OLY?
+
+96; fs= x (35) ”
+
+1(6;) = |g) 0) — 3 Fis 63| @)
+
+Here, gis the gradient of the masked loss w.r.t.
+@;, and F);; is the diagonal of the Fisher matrix
+approximated from per-example gradients L;,. Fo-
+cusing on the output tokens aligns parameter impor-
+tance with the model’s ability to produce correct
+answers.
+
+Selecting and Freezing Parameters. We rank
+{oj} by I(;) and choose the top fraction (con-
+trolled by @) as the “activated” subregion for each
+System. During training, activated parameters re-
+main learnable while the rest are frozen, reducing
+overhead. Some parameters may appear crucial for
+both System 1 and System 2; these “overlapping”
+parameters are shared across the two fine-tuning
+stages. By partitioning parameters in this manner,
+our framework moves closer to the neural analogy
+that different “subregions” are engaged for tasks
+that demand fast vs. slow thinking.
+
+3.4 Two-Stage Fine-tuning Strategy with
+Importance-Based Parameter Selection
+
+Building on the importance scores computed in
+§3.3, we now formalize how to (i) determine
+how many parameters to activate for each sys-
+tem, (ii) handle the overlap between System 1 and
+System 2 parameters, and (iii) schedule the fine-
+tuning process in two distinct stages. As shown
+in Algorithm 1, our approach hinges on three
+hyperparameters—#, a and 3—that control which
+parameters and how many are updated for System
+1 (SFT) and System 2 (RL).
+
+Threshold 6: Selecting the Most Important Pa-
+rameters. From the parameter-importance visu-
+alization (see Figure 4), we observe that System 1
+and System 2 each rely on a partially disjoint set of
+LoRA parameters, with a notable overlap. More-
+over, each dataset contains many “low-impact” pa-
+rameters whose importance is near zero for both
+systems. We introduce a cumulative-importance
+threshold 6. Specifically, for each system’s impor-
+tance ranking, we keep only the most important
+subset of parameters with cumulative-importance
+score over 6, discarding the tail of negligible-
+importance parameters to reduce overhead and
+avoid unnecessary updates. For instance, setting
+= 0.9 means we retain only the parameters with
+cumulative-importance score over 90%, they are
+crucial for System 1 and System 2 tasks, respec-
+tively.!
+'The 0 is not the ratio of parameters used in the follow-
+ing training procedure. In the situation of puting LoRA on
+
+Activation Fractions a and (6: Handling Over-
+lap. Applying 6 individually to System 1 and Sys-
+tem 2 yields two top-ranked sets of LORA param-
+eters, which partially overlap. Concretely, some
+parameters rank among the top-ranked for both
+systems; we call these “shared” (see the purple
+region in Figure 4). We thus introduce two acti-
+vation fractions, a and (3, to control how many of
+these shared parameters are updated during the two
+training stages:
+
+¢ Stage 1 (SFT on System 1 tasks): We acti-
+vate (a) all parameters in the System 1-only
+subset and (b) an a fraction of the shared pa-
+rameters. If a < 1, we only partially train the
+shared region in this stage.
+
+Stage 2 (RL on System 2 tasks): We then
+activate (a) all parameters in the System 2-
+only subset and (b) a fraction of the shared
+parameters. The rest remain frozen, enabling
+us to flexibly allocate more (or fewer) shared
+parameters to System 2 based on (.
+
+By varying a and £, we fine-tune the balance
+between “fast, direct” adaptation for System 1 and
+“multi-step, deliberative” adaptation for System 2,
+ensuring that parameters useful for both can be
+partially or fully trained in each stage as needed.
+
+Why Two Distinct Stages (SFT then RL)? We
+adopt SFT —>+ RL following practices in Ope-
+nAI GPT, DeepSeek-R1, and related literature on
+multi-stage language model training. System 1
+tasks—quick, direct Q&A—are naturally suited to
+end-to-end SFT, which establishes “fast-thinking”
+capability without delving into complex reason-
+ing. This “knowledge foundation” helps bootstrap
+the second stage, where RL encourages step-by-
+step logical reasoning for System 2 tasks (akin to
+a “slow-thinking” process). In essence, RL refines
+and extends the capabilities acquired via SFT, re-
+warding correct multi-step strategies rather than
+just direct answers.
+
+Putting It All Together. Algorithm 1 outlines
+these steps more formally. In Stage 1 (SFT), only
+the System 1-only subset plus a-portion of shared
+parameters are trained; in Stage 2 (RL), only the
+System 2-only subset plus $-portion of shared pa-
+rameters are updated. This design ensures each
+QKVGUD of LLaMa2 7B, if we set 9 = 0.9, there are ap-
+
+proximately 40% of parameters that will treated as important
+to System 1/2.
+
+Data Classification Strategy Performance
+
+QwQ w/o role play 25.32
+QwQ w/ role play 26.23
+Deepseek-R1 w/ role play 26.84
+Random partition 25.85
+Role play + voting (n=3) 27.07
+Role play + voting (n=5) 27.60
+
+Table 1: Performance on GSM8K under different
+data classification approaches. All runs use LLaMA2
+7B + LoRA (QKV/Gate/Up/Down) and SFT. “‘n” indi-
+cates the number of external LLM used to vote.
+
+system’s specialized subregion is honed for its re-
+spective tasks, while shared parameters can flexibly
+contribute to both fast and slow thinking modes.
+
+4 Experiment
+
+4.1 Experimental Setup.
+
+We begin by partitioning each dataset via multi-
+model role-playing and voting §3.2, then com-
+pute LoRA parameter importance and keep the
+top-ranked for each system §3.3. Training pro-
+ceeds in two stages §3.4: (1) SFT for System 1,
+and (2) RL for System 2, with shared parameters
+managed by a and 3. We measure accuracy across
+GSM8K (Cobbe et al., 2021), MMLU (Hendrycks
+et al., 2021) (trained using Dolly15K (Conover
+et al., 2023) or OpenPlatypus (Lee et al., 2023)),
+and HumanEval (Chen et al., 2021) (code tasks),
+comparing our approach to LoRA (Hu et al., 2021),
+OLoRA (Biiyiikakyiiz, 2024), PiSSA (Meng et al.,
+2024), and PiSSA+RL, all based on LLaMA2 7B.
+Key hyperparameters include @ (fraction of top-
+ranked parameters), a, ( (activation fractions for
+overlapping parameters), and 1—2 training epochs
+for each baseline.
+
+4.2 Role-Playing and Voting for Data
+Classification
+
+We first verify the role-playing and voting approach
+introduced in §3.2 by comparing various data clas-
+sification strategies on GSMB8K. Specifically, we
+contrast (a) a single model without role-play, (b) a
+single model prompted to “‘act as” LLaMA2 7B, (c)
+random partitioning, and (d) multiple models with
+role-play plus voting. As shown in Table 1, the
+multi-model role-play+voting setup achieves the
+highest performance. Prompting an external LLM
+to imitate the target model’s decision boundary
+(role-playing) reduces misclassification compared
+to its default inference style, while the voting en-
+
+GSM8K
+
+Dolly15K
+
+CodeAlpaca
+
+sys1_only(24.32%)
+sys2_only(23.53%)
+shared(jaccard: 0.614) -
+
+0.0008
+
+0.0006
+
+0.0004
+
+0.0002
+
+System2 Importance (normalized)
+
+0.0000
+
+sys1_only(38.00%)
+sys2_only(43.15%)
+shared(jaccard: 0.422)
+
+sys1_only(37.12%)
+sys2_only(39.87%)
+shared(jaccard: 0.444)
+
+0.0000 0.0002 0.0004 0.0006
+
+System! Importance (normalized)
+
+0.0000 0.0001 0.0002 0.0003 0.0004 0.0005
+System! Importance (normalized)
+
+0,0000 0.0001 0.0002 0.0003 0.0004 0.0005 0.0006
+System! Importance (normalized)
+
+Figure 4: Scatter plots of LoRA parameter importance for System | (x-axis) vs. System 2 (y-axis) with a cumulative
+importance cutpoint 6 = 0.9. Each dot is then labeled as System 1 only (red), System 2 only (blue), or shared
+(purple), the legend indicate the fraction of non-overlapping parameters and the Jaccard overlap between System 1
+and System 2 top sets. Notice that a substantial portion of parameters specialize in one system while a moderate
+number are shared, highlighting the potential for distinct subregions of LoRA parameters in multi-stage fine-tuning.
+
+semble mitigates individual biases and yields more
+robust splits. This result aligns with our intuition
+that combining multiple “teacher” perspectives bet-
+ter approximates how LLaMA2 7B would distin-
+guish System | vs. System 2 questions, ultimately
+enhancing downstream fine-tuning.
+
+4.3 Adaptive Parameter Usage via 0
+
+We next investigate how varying the cumulative im-
+portance cutpoint @ (from 0% to 100%) affects both
+the number of LoRA parameters activated and the
+resulting performance under SFT. In essence, 6 dic-
+tates which and how many parameters are updated,
+as introduced in §3.4. For each setting, we compare
+three LoRA module configurations—QKV, GUD,
+and QKVGUD-—against a random-selection base-
+line that picks the same fraction of parameters but
+without regard to importance.
+
+Table 3 summarizes our results on GSM8K, and
+Figure 5 illustrates the overall trend. As 6 in-
+creases, performance generally improves, but di-
+minishing returns emerge near the high end. No-
+tably, QKVGUD reaches close to its maximum
+accuracy even around @ between 0.8 and 0.9, ac-
+tivating only 30%—40% of LoRA parameters. In
+contrast, random selection of an equivalent fraction
+falls short, underscoring that targeting the most
+important parameters is critical to strong perfor-
+mance. In practice, 6 can thus be tuned to strike a
+balance between absolute accuracy and parameter
+budget.
+
+Algorithm 1 Two-stage Fine-tuning
+
+1: Input: LoRA parameters {¢;}/”,, importance
+scores $1 (7), s2(i), thresholds 0, a, 8
+
+2: Step 1 (Partition):
+
+3: Sort parameters by s1(7)/s2(i) and keep the
+top important fraction as 51/59.
+
+4: Qy-only = S$; \ Sg, Qe-only = So \
+S1, Osharea = $1 S9.
+
+5: Step 2 (Stage 1: SFT):
+
+6: Activate all parameters in 2;-only.
+
+7: For each ¢; € Osharea, activate it if it is in the
+top-a fraction by s1(7).
+
+8: Freeze all other parameters.
+
+9: Step 3 (Stage 2: RL):
+
+10: Activate all parameters in Q2-only.
+
+11: For each 6; € Ogharea, activate it if it is in the
+top-8 fraction by s2(i).
+
+12: Freeze all other parameters.
+
+4.4 Utilizing Shared Parameters via a & 6
+
+Recall that a@ and {3 (introduced in §3.4) control
+how many of the shared parameters remain ac-
+tive in the SFT (System 1) and RL (System 2)
+stages, respectively. We fix 6 = 0.9 for each
+system, then vary a and @ to measure their im-
+pact on training dynamics. Table 2 shows results
+on GSM8K using QKVGUD LoRA. The “Perfor-
+mance (SFT)” column reflects accuracy after the
+first stage, while “Performance (RL)” is the fi-
+nal accuracy after the second stage. When both
+a = 8 =1, shared parameters remain fully active
+in both stages—maximizing the SFT checkpoint
+and yielding the best final score (34.37). Lower
+
+QkVv
+
+QKVGUD
+
+Performance (%)
+a 8 &
+
+5
+
+—*— Performance (%),
+Base model (LlaMa-2 78) = 13.3
+-=- Random
+
+2 Performance (%),
+--=- Base model (LlaMa-2 78) = 13.3
+-=- Random
+
+—e— Performance (%), @
+=<» Base model (LlaMa-2 7B) = 13.3
+== Random
+
+0 20 40 60 80
+% Parameter
+
+100 0 20 40
+% Parameter
+
+60 80 100 0 20 40 60 80
+
+% Parameter
+
+100
+
+Figure 5: Performance on GSMB8K versus the fraction of LoRA parameters activated (controlled by @), comparing
+QKV, GUD, and QKVGUD configurations. The dashed gray line represents random selection of the same fraction,
+and the horizontal yellow line is the base model’s (LLaMA2 7B) performance.
+
+a 6 Perf. (SFT) Perf. (RL)
+a) 18.88 19.03
+0 05 18.12 25.25
+0 1 18.35 23.58
+0.5 0 23.65 25.85
+0.5 0.5 24.79 29.57
+05 1 24.94 31.01
+1 0 27.75 27.15
+1 05 26.99 31.92
+1 1 27.14 34.37
+
+Table 2: Influence of a and ( on two-stage fine-
+tuning (SFT then RL). All experiments use the
+GSMB8kK dataset with role-playing + voting classifica-
+tion, SFT+RL training, 9 = 0.9, and the QKVGUD LoRA
+module. “Perf. (SFT)” measures model accuracy after
+the first stage, while “Perf. (RL)” is the final accuracy
+after the second stage. When a = 6 = 1, yielding the
+highest final score (in bold).
+
+values of a or 3 reduce the overlap, limiting early
+gains in SFT or hampering the RL stage’s capacity
+for multi-step reasoning. In effect, a strong SFT
+foundation provides a “warm start” for RL (System
+2), letting the model build deeper logic on top of
+its fast-thinking skills.
+
+4.5 Final Performance and Baseline
+Comparisons
+
+We conclude by evaluating our approach along-
+side several LoRA-based baselines (LoRA (Hu
+et al., 2021), OLORA (Biiyiikakyiiz, 2024), PiSSA
+(Meng et al., 2024), PiSSA+RL) on four tasks:
+GSM8K, MMLU (trained with Dolly 15K or Platy-
+pus), and HumanEval. Each column in Table 4
+corresponds to one of these tasks, trained for ei-
+ther one or two epochs. For instance, GSM8K is
+
+trained on its own data, whereas MMLU(Dolly)
+and MMLU(Platypus) use Dolly15K and Open-
+Platypus, respectively. HumanEval relies on code-
+focused data (CodeAlpaca (Chaudhary, 2023),
+CodeFeedback). The base model (LLaMA2 7B) is
+shown for reference, with no fine-tuning. Baselines
+typically perform two rounds of SFT, except for
+PiSSA+RL, which does one SFT epoch and then
+a RL epoch. Our proposals (marked with *) apply
+6-based parameter selection (6 = 0.9 or 6 = 0.95)
+along with role-play+voting data splits and fully
+active overlaps (a = ( = 1) in the two-stage train-
+ing. Notably, PiSSA(@ = 0.9 or 8 = 0.95) uses
+about 40% of the full LoRA parameters yet out-
+performs vanilla PiSSA, indicating that focusing
+on high-importance subregions can yield stronger
+results. Overall, our method achieves the best ac-
+curacy on GSM8K (41.85%), surpassing PiSSA
+by about 12% while using significantly fewer pa-
+rameters. On MMLU, we also observe gains over
+standard LoRA and PiSSA, confirming that selec-
+tively activating only the most relevant parame-
+ters is both efficient and effective. Beyond PiSSA,
+our QKVGUD configuration activates only about
+40% of LoRA parameters (based on 0 = 0.9 or
+0.95) for each system, yet still outperforms both
+full LoRA and random subsets of comparable size.
+As illustrated by the scatter plots in Figure 4, these
+“top-ranked” parameters form a highly specialized
+subregion for fast & intuitive (System 1) vs. multi-
+step (System 2) tasks. In other words, by focusing
+updates on those parameters that are important to
+each reasoning style, we realize the dual-system
+analogy—distinct parameter subsets excel at quick,
+intuitive SFT or stepwise RL—while lowering ac-
+tive parameter usage.
+
+QKV GUD QKVGUD
+
+Q %Param_ Perf. Rand. | %Param_ Perf. Rand. | %Param_ Perf. Rand.
+0 (Base LLaMA2 7B) - 13.3 - - 13.3 - - 13.3 -
+1 (Original LoRA) 100 26.46 - 100 30.25 - 100 30.63 -
+0.1 0.30 0 - 0.22 12.13 - 0.32 8.87 -
+0.2 1.03 1.44 - 1.21 6.90 - 1.22 12.59 -
+
+0.3 2.20 15.77 0 2.89 5.76 3.11 2.72 11.90 6.29
+0.4 3.93 18.44 5.30 6.22 - 4.90 13.04 -
+0.5 6.39 20.55 - 8.61 11.14 - 7.91 13.12 -
+
+0.6 9.88 22.29 = 11.22 13.10 17.36 17.13 12.07 15.16 13.87
+0.7 14.90 23.73 - 19.30 21.15 - 17.87 20.62 -
+0.8 22.52 23.65 - 28.27 22.14 - 26.40 24.03 -
+
+0.9 35.70 23.35 21.30 42.90 25.47 23.43 40.56 27.3 23.43
+
+Table 3: Performance on GSMS8K with varying cutpoint (9) and different module configurations. For each 6,
+“%Param’’ denotes the percentage of LoRA parameters activated, “Perf.” is the performance metric (accuracy), and
+
+“Rand.” is the performance when randomly selecting the same fraction of parameters. All runs use LLaMA2 7B +
+LoRA with SFT.
+GSM8K MMLU(Dolly) MMLU (Platypus) HumanEval
+Method lepoch 2epoch | Lepoch 2epoch | lepoch 2epoch | lepoch 2 epoch
+LLaMa2 7B 13.3 - 46.48 - 46.48 - 14.39 -
+LoRA (2021) 27.8 31.86 45.85 44.99 43.36 43.16 15.37 18.54
+LoRA OLoRA (2024) 29.57 32.83 45.08 45.06 45.16 45.26 15.85 19.02
+PiSSA (2024) 30.78 33.59 22.95 23.27 24.14 23.89 21.95 24.39
+PiSSA+RL 30.63 37.45 22.96 23.45 23.98 23.92 21.34 25.61
+*PiSSA(O = 0.9) 28.73 38.97 23.10 24.07 24.11 25.01 22.56 26.22
+Proposal *PiSSA(@ = 0.95) 30.86 41.85 23.33 24.14 24.41 25.38 23.17 27.43
+*LoRA(@ = 0.9) 27.07 34.57 46.34 47.09 44.15 45.66 16.46 19.51
+
+Table 4: Comparison of LoRA-based baselines versus our proposals on four benchmarks. We use LLaMA2
+7B as the base model; One or two training epochs are performed, as our proposal, PiSSA+RL specifically doing
+one SFT followed by one RL epoch. Our proposed methods (marked ) combine role-play+voting data splitting and
+importance-based parameter activation (9) with fully active shared region (a = 6 = 1).
+
+5 Limitations
+
+Our experiments confirm that selectively activating
+LoRA parameters for System 1 and System 2 yields
+clear benefits in both performance and parameter
+efficiency. By combining role-play-based data split-
+ting with importance-driven parameter partition-
+ing, we effectively approximate the dual-process
+paradigm within an LLM. Nonetheless, there are
+a few limitations: (1) Multi-Model Annotations.
+Although using multiple teacher LLMs improves
+labeling quality, it adds computational overhead
+and presupposes access to diverse, high-capacity
+models. (2) Granularity of Task Partitioning.
+Our approach treats tasks at a coarse level (System
+1 vs. System 2). More nuanced distinctions (e.g.,
+intermediate steps or partial multi-hop reasoning)
+may require finer-grained analysis. (3) Applicabil-
+ity to Other Architectures. We have shown results
+on LLaMA2 7B; generalizing to other model fam-
+ilies (e.g., decoder-encoder hybrids) may require
+adjustments in how LoRA parameters are attached
+and scored.
+
+6 Conclusion
+
+We presented a dual-system PEFT framework in-
+spired by Thinking, Fast and Slow, wherein System
+1 and System 2 “subregions” of LoRA parame-
+ters address fast, intuitive tasks vs. slower, multi-
+step reasoning. Our pipeline (1) classifies queries
+via multi-model role-playing and voting, (ii) deter-
+mines each LoRA parameter’s importance relative
+to System 1 or System 2, and (iii) fine-tunes in
+two stages—SFT for intuitive response, then RL
+for deeper logic. Across GSM8K, MMLU, and
+HumanEval, we find that focusing updates on top-
+ranked parameters not only cuts active parameter
+usage (often to 40% or less) but also surpasses base-
+line PEFT methods that uniformly fine-tune larger
+parameter sets. By assigning each subregion to a
+distinct “cognitive” mode, we effectively reconcile
+fast vs. slow thinking within a single LLM. We
+believe this “subregion specialization” opens new
+directions for cognitively guided LLM adaptations,
+enabling more efficient models that still excel at
+both intuitive and methodical reasoning.
+
+References
+
+Grady Booch, F. Fabiano, L. Horesh, Kiran Kate,
+Jonathan Lenchner, Nick Linck, Andrea Loreggia,
+Keerthiram Murugesan, Nicholas Mattei, Francesca
+Rossi, and Biplav Srivastava. 2020. Thinking fast
+and slow in ai. In AAAI Conference on Artificial
+Intelligence.
+
+Kerim Biiyiikakyiiz. 2024. Olora: Orthonormal low-
+rank adaptation of large language models. ArXiv,
+abs/2406.01775.
+
+Sahil Chaudhary. 2023. Code alpaca: An instruction-
+following llama model for code generation. https:
+//github.com/sahil280114/codealpaca.
+
+Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan,
+Henrique Ponde de Oliveira Pinto, Jared Kaplan,
+Harri Edwards, Yuri Burda, Nicholas Joseph, Greg
+Brockman, Alex Ray, Raul Puri, Gretchen Krueger,
+Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela
+Mishkin, Brooke Chan, Scott Gray, and 39 others.
+2021. Evaluating large language models trained on
+code. Preprint, arXiv:2107.03374.
+
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+Nakano, Christopher Hesse, and John Schulman.
+2021. Training verifiers to solve math word prob-
+lems. arXiv preprint arXiv:2110.14168.
+
+Mike Conover, Matt Hayes, Ankit Mathur, Jianwei Xie,
+Jun Wan, Sam Shah, Ali Ghodsi, Patrick Wendell,
+Matei Zaharia, and Reynold Xin. 2023. Free dolly:
+Introducing the world’s first truly open instruction-
+tuned IIm.
+
+Foundational Contributors, Ahmed El-Kishky, Daniel
+Selsam, Francis Song, Giambattista Parascandolo,
+Hongyu Ren, Hunter Lightman, Hyung Won, Ilge
+Akkaya, Ilya Sutskever, Jason Wei, Jonathan Gor-
+don, Karl Cobbe, Kevin Yu, Lukasz Kondraciuk,
+Max Schwarzer, Mostafa Rohaninejad, Noam Brown,
+Shengjia Zhao, and 189 others. 2024. Openai ol
+system card. ArXiv, abs/2412.16720.
+
+DeepSeek-Al, Daya Guo, Dejian Yang, Haowei Zhang,
+Jun-Mei Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,
+Shirong Ma, Peiyi Wang, Xiaoling Bi, Xiaokang
+Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou,
+Zhihong Shao, Zhuoshu Li, Ziyi Gao, and 179 oth-
+ers. 2025. Deepseek-r1: Incentivizing reasoning ca-
+pability in llms via reinforcement learning. ArXiv,
+abs/2501.12948.
+
+Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and
+Luke Zettlemoyer. 2023. Qlora: Efficient finetuning
+of quantized Ilms. ArXiv, abs/2305.14314.
+
+Elias Frantar and Dan Alistarh. 2023. Sparsegpt: Mas-
+sive language models can be accurately pruned in
+one-shot. ArXiv, abs/2301.00774.
+
+Thilo Hagendorff, Sarah Fabi, and Michal Kosinski.
+2022. Human-like intuitive behavior and reasoning
+biases emerged in large language models but disap-
+peared in chatgpt. Nature Computational Science,
+3:833 — 838.
+
+Soufiane Hayou, Nikhil Ghosh, and Bin Yu. 2024.
+Lorat: Efficient low rank adaptation of large models.
+ArXiv, abs/2402.12354.
+
+Dan Hendrycks, Collin Burns, Steven Basart, Andy
+Zou, Mantas Mazeika, Dawn Song, and Jacob Stein-
+hardt. 2021. Measuring massive multitask language
+understanding. Proceedings of the International Con-
+ference on Learning Representations (ICLR).
+
+J. Edward Hu, Yelong Shen, Phillip Wallis, Zeyuan
+Allen-Zhu, Yuanzhi Li, Shean Wang, and Weizhu
+Chen. 2021. Lora: Low-rank adaptation of large
+language models. ArXiv, abs/2106.09685.
+
+Daniel Kahneman. 2011. Thinking, fast and slow.
+
+Ariel N. Lee, Cole J. Hunter, and Nataniel Ruiz. 2023.
+Platypus: Quick, cheap, and powerful refinement of
+Ilms.
+
+Guanchen Li, Yixing Xu, Zeping Li, Ji Liu, Xuanwu
+Yin, Dong Li, and Emad Barsoum. 2025. Tyr-the-
+pruner: Unlocking accurate 50% structural pruning
+for lms via global sparsity distribution optimization.
+ArXiv, abs/2503.09657.
+
+Shen Li, Liuyi Yao, Lan Zhang, and Yaliang Li. 2024.
+Safety layers in aligned large language models: The
+key to lm security.
+
+Xinyin Ma, Gongfan Fang, and Xinchao Wang. 2023.
+Llm-pruner: On the structural pruning of large lan-
+guage models. ArXiv, abs/2305.11627.
+
+Fanxu Meng, Zhaohui Wang, and Muhan Zhang. 2024.
+Pissa: Principal singular values and singular vec-
+tors adaptation of large language models. ArXiv,
+abs/2404.02948.
+
+Jiabao Pan, Yan Zhang, Chen Zhang, Zuozhu Liu, Hong-
+wei Wang, and Haizhou Li. 2024. Dynathink: Fast
+or slow? a dynamic decision-making framework for
+large language models. In Conference on Empirical
+Methods in Natural Language Processing.
+
+Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Jun-
+Mei Song, Mingchuan Zhang, Y. K. Li, Yu Wu, and
+Daya Guo. 2024. Deepseekmath: Pushing the limits
+of mathematical reasoning in open language models.
+ArXiv, abs/2402.03300.
+
+Guangyuan Shi, Zexin Lu, Xiaoyu Dong, Wenlong
+Zhang, Xuanyu Zhang, Yujie Feng, and Xiao-Ming
+Wu. 2024. Understanding layer significance in Ilm
+alignment. ArXiv, abs/2410.17875.
+
+Mingjie Sun, Zhuang Liu, Anna Bair, and J. Zico Kolter.
+2023. A simple and effective pruning approach for
+large language models. ArXiv, abs/2306.11695.
+
+Qingru Zhang, Minshuo Chen, Alexander Bukharin,
+Pengcheng He, Yu Cheng, Weizhu Chen, and
+Tuo Zhao. 2023a. Adaptive budget alloca-
+tion for parameter-efficient fine-tuning. ArXiv,
+abs/2303.10512.
+
+Zhenru Zhang, Chuanqi Tan, Haiyang Xu, Chengyu
+Wang, Jun Huang, and Songfang Huang. 2023b. To-
+wards adaptive prefix tuning for parameter-efficient
+language model fine-tuning. In Annual Meeting of
+the Association for Computational Linguistics.
+
+Chunting Zhou, Pengfei Liu, Puxin Xu, Srini Iyer, Jiao
+Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu,
+L. Yu, Susan Zhang, Gargi Ghosh, Mike Lewis, Luke
+Zettlemoyer, and Omer Levy. 2023. Lima: Less is
+more for alignment. ArXiv, abs/2305.11206.
+
+10
+

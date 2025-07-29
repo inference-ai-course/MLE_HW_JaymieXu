@@ -1,0 +1,1598 @@
+arXiv:2507.20917v1 [cs.CL] 28 Jul 2025
+
+MediQAI: A French Medical Question Answering Dataset for Knowledge
+and Reasoning Evaluation
+
+Adrien Bazoge!”
+‘Data Clinic, University Hospital of Nantes, France
+2Nantes Université, Ecole Centrale Nantes, CNRS, LS2N, France
+adrien.bazoge@univ-nantes. fr
+
+Abstract
+
+This work introduces MediQAI, a French med-
+ical question answering dataset designed to
+evaluate the capabilities of language models
+in factual medical recall and reasoning over
+real-world clinical scenarios. MediQAI con-
+tains 32,603 questions sourced from French
+medical examinations across 41 medical sub-
+jects. The dataset includes three tasks: (i)
+Multiple-Choice Question with Unique answer,
+(ii) Multiple-Choice Question with Multiple
+answer, and (iii) Open-Ended Question with
+Short-Answer. Each question is labeled as Un-
+derstanding or Reasoning, enabling a detailed
+analysis of models’ cognitive capabilities. We
+validate the MediQAI dataset through exten-
+sive evaluation with 14 large language models,
+including recent reasoning-augmented models,
+and observe a significant performance gap be-
+tween factual recall and reasoning tasks. Our
+evaluation provides a comprehensive bench-
+mark for assessing language models’ perfor-
+mance on French medical question answer-
+ing, addressing a crucial gap in multilingual
+resources for the medical domain.
+
+1 Introduction
+
+Medical licensing examinations, originally de-
+signed to assess students’ knowledge and reason-
+ing, are increasingly repurposed as benchmarks for
+evaluating large language models (LLMs) medi-
+cal capabilities (Yan et al., 2024). Benchmarks of
+question-answering tasks predominantly rely on
+multiple-choice questions (MCQs) with a single
+correct answer (Hendrycks et al., 2021; Wang et al.,
+2024). This format is widely used due to the avail-
+ability of automatic evaluation metrics that pro-
+vide consistent and objective assessment of LLMs
+at scale. While MCQ-based datasets and metrics
+provide a valuable initial insight into LLM perfor-
+mance, they are often limited in several key aspects:
+the number of examples, the diversity of medical
+subjects covered, their representation of real-world
+
+clinical scenarios (Shi et al., 2024), and the range
+of languages represented. Indeed, most of existing
+benchmarks are heavily centered around English,
+which restricts their applicability to multilingual
+or non-English contexts (Yan et al., 2024). Fur-
+thermore, medical benchmarks inherently reflect
+cultural, educational, and regulatory contexts in
+which they are developed. The format of questions
+and answers mirrors how medicine is taught and
+assessed in their respective countries, which differs
+in structure, emphasis, and evaluative expectations
+across regions. In addition, treatment guidelines,
+clinical protocols, and legal standards are often
+country-specific, meaning that identical questions
+translated across languages can pose entirely dif-
+ferent challenges.
+
+Recent efforts have focused on increasing di-
+versity in question difficulty and covering a wider
+variety of medical subjects (Zuo et al., 2025), yet
+these benchmarks remain predominantly limited
+to English-language and rely on MCQs with a
+single correct answer. This limitation is particu-
+larly problematic, as several studies have demon-
+strated significant performance disparities between
+languages, with LLMs performing considerably
+better in English compared to less-resourced lan-
+guages (Jin et al., 2024; Dey et al., 2024; Alonso
+et al., 2024). Therefore, it is crucial to develop
+more inclusive benchmarks that cover a broader
+range of languages and are more reflective of real-
+world clinical scenarios, ensuring a fair and com-
+prehensive evaluation of LLMs in the medical do-
+main.
+
+In this work, we present MediQAI, a medical
+question answering dataset for French. This dataset
+contains questions sourced from French medical
+licensing examinations. These are manually cre-
+ated by academic and hospital faculty members
+to reflect real-world clinical scenarios and cover a
+broad range of medical subjects.
+
+This paper makes the following contributions:
+
+MCQU MCOM OEQ
+Understanding Reasoning Total | Understanding Reasoning Total | Understanding Reasoning Total
+
+“Total Number of Questions | 1 11,336 5,681 17,017” 7,742 «2.875 10,617 | 1842 3,125" ~ “4,969 ©
+# Isolated Questions 9,126 961 10,087 6,200 343 6,543 836 179 1,015
+# In-context Questions 2,210 4,720 6,930 1,542 2,532 4,074 1,006 2,946 3,954
+Avg Question Length 18.95 21.57 19.82 13.20 16.12 13.99 16.79 20.95 19.40
+Avg Clinical Scenarios Length 83.50 107.67 99.97 94.87 114.77. 107.24 109.71 141.28 132.19
+Avg Answer Length - - - - - - 25.26 40.24 34.68
+
+Table 1: Characteristics o
+scenario. Lengths are measured in words.
+
+1. We introduce MediQAI, a French medical
+question answering (QA) dataset that in-
+cludes three tasks : (i) Multiple-Choice
+Question with Unique Answer (MCQU), (ii)
+Multiple-Choice Question with Multiple An-
+swers (MCQM) and (iii) Open-Ended Ques-
+tion with Short-Answer (OEQ).
+
+2. MediQAI covers a total of 41 medical subjects
+and each question is categorized as either Un-
+derstanding or Reasoning, enabling detailed
+analysis of LLMs’ capabilities across different
+cognitive tasks.
+
+3. We present an extensive evaluation of 14 large
+language models (LLMs) on MediQAI, in-
+cluding latest reasoning-based models, pro-
+viding a comprehensive benchmark for assess-
+ing their performance over real-world clini-
+cal scenarios. We compare different groups
+of models, focusing on the performance gap
+between vanilla models (non-reasoning) and
+their reasoning-enhanced counterparts.
+
+The dataset is available on HuggingFace! under
+CC-BY-4.0 license and all evaluation scripts are
+available on Github?.
+
+2 Related Work
+
+Multiple-choice question answering with a unique
+correct answer (MCQU) is a well-established
+task, frequently used to benchmark language mod-
+els. This task is particularly prominent in the
+medical domain, where several datasets have
+been developed in various languages. In En-
+glish, multiple high-quality datasets exist, includ-
+ing HEAD-QA (Vilares and Gémez-Rodriguez,
+2019), MedQA (Jin et al., 2021), MedMCQA (Pal
+et al., 2022), MMLU (Medical) (Hendrycks et al.,
+
+‘https://huggingface.co/datasets/ANR-
+MALADES/MediQAl1
+7https://github.com/abazoge/MediQAl
+
+the MediQAI dataset. In-context questions refers to questions including a clinical
+
+2021; Wang et al., 2024), and more recently, MedX-
+pertQA (Zuo et al., 2025), an expert-level bench-
+mark for medical MCQU tasks.
+
+In other languages, efforts have been made
+to extend the task to non-English settings. No-
+table examples include datasets for Chinese (Li
+et al., 2021), Polish (Bean et al., 2024) and
+Spanish (Alonso et al., 2024). However, for
+French, the resources remain scarce. FrenchMedM-
+CQA (Labrak et al., 2022) is a dataset contain-
+ing 3,105 multiple-choice questions, with both
+unique and multiple answers, but is limited to phar-
+macy topics. Another MCQU dataset, MedEx-
+pQA (Alonso et al., 2024), includes a French subset
+that is translated from Spanish.
+
+In addition to multiple-choice datasets, open-
+ended question answering in the medical domain
+is less common, as evaluating free-text responses
+is more challenging and often requires manual hu-
+man validation. Some open-ended QA datasets
+are derived from existing multiple-choice corpora.
+For instance, MEDQA-OPEN (Nachane et al.,
+2024) reformulates MedQA questions into an open-
+ended format. For French, there is only a single
+small-scale open-ended QA dataset, MedFrench-
+mark (Quercia et al., 2024), containing only 114
+examples.
+
+3 MediQAI
+
+We introduce MediQAI, a French medical dataset
+consisting of questions sourced from French medi-
+cal examinations. MediQAI is designed to evaluate
+medical knowledge and reasoning on both isolated
+and in-context questions reflecting real-world clin-
+ical scenarios. The dataset includes three subsets,
+corresponding to distinct question answering tasks:
+(1) Multiple-Choice Question with unique answer
+(MCQU), (2) Multiple-Choice Question with multi-
+ple answers (MCQM) and (3) Open-Ended Ques-
+tion with a short answer (OEQ). MediQAI contains
+a total of 32,603 questions, of which 17,017 are
+MCQU, 10,617 are MCQM and 4,969 are OEQ.
+
+These questions span 41 medical subjects and are
+categorized as Understanding or Reasoning, offer-
+ing a diverse and reliable benchmark for medical
+question answering tasks in French. Table 1 sum-
+marizes the main characteristics of the dataset.
+
+3.1 Tasks Definition
+
+Multiple-Choice Question with Unique Answer
+(MCQU) This task can be formulated as X =
+{C,Q,(O1, ...,O5), A} where C is an optional
+clinical scenario, Q is the question, (Oj, ...,O5)
+are five candidate options and A is the correct
+answer. For a given triplet {C,Q, (O1, ...,Os)},
+the correct answer A is a single option O; from
+(Oj,...,O5). This task is similar to most existing
+MCQA datasets.
+
+Multiple-Choice Question with Multiple An-
+swers (MCQM) This task follows a similar for-
+mulation as MCQU: X = {C,Q, (O1,...,O5), A}.
+However, in MCQM, the correct answer A is a
+subset of candidate options with |A| > 2. The
+answer includes multiple correct options among
+
+(O1, ...,O5).
+
+Open-Ended Question with Short Answer
+(OEQ) The OEQ task can be formulated as X =
+{C, Q, A} where C is an optional clinical scenario,
+Q is the question and A is a short, free-text answer.
+The answer length is lower than 200 tokens.
+
+3.2. Medical Coverage
+
+MediQAI covers a total of 41 medical subjects,
+such as cardiology, pediatrics, genetics, ophthal-
+mology and biochemistry. The distribution of med-
+ical subjects across the dataset is displayed in Fig-
+ure 1. For MCQU and MCQM subsets, this infor-
+mation was directly available in the collected data
+sources. However, for the OEQ subset, the med-
+ical subjects were not consistently present across
+all data sources. To address this, we instructed
+gpt-40-2024-08-06 (OpenAl, 2024a) to automat-
+ically assign a medical subject to questions when it
+was missing. The prompt used for this annotation
+is provided in Appendix A.1.
+
+4 Dataset Construction
+
+4.1 Data Collection
+
+For the construction of this dataset, the raw data
+was collected from publicly available websites and
+forums where professors and students share exami-
+nation questions intended for training purposes in
+
+preparation for the national French medical exami-
+nation, such as ECN exams.
+
+The National Classifying Tests (Epreuves Clas-
+santes Nationales - ECN) are the theoretical exams
+conducted during the sixth year of medical studies
+in France. These exams determine the ranking of
+medical students, which in turn allows them to se-
+lect their university hospital for residency, as well
+as their specialization track and the services where
+they will complete six-month clinical internships.
+
+The ECN also serves as a comprehensive eval-
+uation of the students’ medical knowledge and
+clinical reasoning, crucial for their future roles as
+medical practitioners. The exam consists of the
+following components: (i) clinical scenario-based
+questions, (ii) isolated knowledge-based questions,
+and (iii) critical article analysis questions. The
+question formats include multiple-choice questions
+(MCQs) with five options (either a single correct an-
+swer or multiple correct answers) and open-ended
+short-answer questions. Each year, examination
+questions and answer are manually created and ver-
+ified by a scientific advisory board composed of
+tenured academic and hospital faculty members.
+
+In line with this structure, we organized the
+dataset into multiple subsets corresponding to the
+ECN’s questions formats. The multiple-choice
+questions (MCQU and MCQM) were automati-
+cally extracted from the qcmlab website in March
+2024. Each instance in these subsets contains a
+unique ID, an optional clinical scenario, a question,
+five candidates, the associated medical subject and
+the correct answer. For the open-ended questions
+with short-answer (OEQ subset), the raw data was
+collected from multiple sources as HTML and PDF
+files. HTML files were well-structured enough to
+automatically extract QA instances using regular
+expressions. For the remaining PDF files, their
+structure was not homogeneous and could not be
+parsed automatically, and each instance was then
+extracted and curated manually.
+
+4.2 Data Filtering
+
+To ensure that the collected instances were homo-
+geneous and that the questions were answerable,
+we applied several filters and preprocessing steps.
+
+For the MCQU and MCQM subsets, questions
+with missing correct answers or candidate options
+were removed. Since these subsets contained a
+large number of questions, we used three models
+(Llama-3.1-8B-Instruct (Grattafiori et al., 2024),
+Qwen?2.5-7B-Instruct (Team, 2024) and Mistral-
+
+Cardiology
+Hepato-Gastroenterology
+Gynecology and Obstetrics
+Pulmonology
+
+Hematology
+Nephro-Urology
+
+armacy
+
+Endocrinology and Metabolism
+
+Nena
+
+ychiatry
+
+Pediatrics
+
+Rheumatology
+
+Infectious Diseases
+Pediatric Cardiolo
+
+Otorhinolaryngofogy (E
+
+ermatology
+
+‘Orthopedics
+
+_ Ophthalmology
+
+Forensic Medicine and Toxicology
+
+Immunology
+
+Pathological Anatomy
+
+Biochemistry
+
+Epidemiology
+
+icrobiology
+
+Pharmacology
+
+Occupational Medicine
+
+Genetics
+
+Parasitology
+
+Physiology
+
+fistology
+
+Intensive Care
+
+Emergency Medicine
+
+Urology
+
+Radiology
+
+Anatomy
+
+Cytology
+
+Rehabilitation
+
+Public Health
+
+Bacteriology
+
+Embryology
+
+mmm MCQU
+=m MCQM
+mmm OFQ
+
+Semiology | . . .
+i) 250 500 750
+
+1000 1250 1500
+
+Number of questions
+
+1750 2000
+
+Figure 1: Distribution of medical subjects across MediQAI dataset.
+
+7B-Instruct-v0.3 (Jiang et al., 2023)) to vote on and
+filter questions to only keep challenging questions
+in the test sets. If any of the models answer a ques-
+tion correctly, the question is deemed too simple
+and is removed from the test sets. All removed
+questions were then randomly split into training
+(80%) and validation (20%) sets for both MCQU
+and MCQM subsets. The dataset splits for all tasks
+are presented in Table 2.
+
+Train | Validation | Test
+
+MCQU | 10,113 2,561 4,343
+MCQM | _ 5,767 1,466 3,384
+OEQ - - 4,969
+
+Table 2: MediQAI dataset distribution
+
+For the OEQ subset, questions with clinical sce-
+nario containing images or tables were removed.
+Points awarded for each response element, some-
+times embedded in the response text, were removed.
+Duplicates questions were identified by calculating
+cosine similarity on TF-IDF (Sparck Jones, 1972)
+vectorized representations of both questions and an-
+swers. All QA pairs with a similarity score greater
+than 0.70 were manually reviewed, and duplicates
+were removed. To retain only short-answer ques-
+tions, we tokenized each answer using a French
+medical tokenizer from DrBERT model (Labrak
+et al., 2023) and excluded instances where the
+length of the answer exceeded 200 tokens.
+
+4.3 Understanding and Reasoning Questions
+
+To assess the capacity of LLMs to handle complex
+clinical reasoning tasks beyond simple recall of
+medical knowledge, we implemented an automatic
+question categorization approach. Specifically, we
+categorized each question into one of two types:
+Understanding or Reasoning. This categorization
+was performed using gpt-40-2024-08-06, follow-
+ing the strategy outlined by Zuo et al. (2025). The
+details of the prompt used for this process are pro-
+vided in Appendix A.2.
+
+The quality of this automatic categorization was
+manually assessed by reviewing 10 randomly se-
+lected questions for each medical subject (5 labeled
+as Understanding, and 5 as Reasoning) from the
+test set of each task. In total, 858 questions were re-
+viewed. Among these, 72 questions were explicitly
+mislabeled, resulting in an error rate of 8.4%.
+
+5 Experiments
+
+5.1 Models
+
+We evaluate several leading LLMs on MediQAI,
+covering both proprietary and open-source mod-
+els, including vanilla models and recent reasoning-
+based models.
+
+Vanilla Large Language Models: GPT-
+40-2024-08-06 (OpenAI, 2024a), DeepSeek-
+V3 (DeepSeek-AI, 2024), Quwen2.5-72B-
+Instruct (Team, 2024), Llama-3.3-70B-
+Instruct (Grattafiori et al., 2024), Llama-3-
+UltraMedical 70B and 8B (Zhang et al., 2024) and
+
+BioMistral-7B (Labrak et al., 2024).
+
+Reasoning Large Language Models: 03-
+2025-04-16 (OpenAI, 2024b), DeepSeek-
+R1 (DeepSeek-AI, 2025), DeepSeek-R1-Distill-
+Llama-70B (DeepSeek-AI, 2025), HuatuoGPT-
+o1-8B (Chen et al., 2024), FineMedLM-ol
+8B (Yu et al., 2025), DeepSeek-R1-Distill-Llama-
+8B (DeepSeek-AI, 2025), DeepSeek-R1-Distill-
+Qwen2.5-7B (DeepSeek-AI, 2025).
+
+5.2. Supervised Fine-tuning
+
+In addition to all evaluated models, we conducted
+supervised fine-tuning (SFT) on BioMistral-7B
+to assess the learnability and utility of the MediQAl
+dataset. The BioMistral-7B-SFT model was
+trained for two epochs using the combined training
+sets of all tasks (MCQU, MCQM, and OEQ). Since
+the OEQ subset lacks a dedicated training set, we
+converted questions from MQCU and MCQM train-
+ing sets into OEQ format to enable unified training.
+We performed full fine-tuning of the model with a
+learning rate of 2 x 107°
+
+5.3. Evaluation Framework
+
+All models across all tasks were evaluated in a
+zero-shot prompting setup, using greedy decoding
+for output generation when available to ensure re-
+sult stability. For reasoning models that require
+specific evaluation settings, we followed the rec-
+ommended instructions provided for each. To re-
+duce inference time, open-source models were lim-
+ited in their output length: up to 2,048 tokens for
+vanilla models and up to 8,192 tokens for reasoning-
+based models. For API-based models (03, GPT-40,
+DeepSeek-V3 and DeepSeek-R1), we followed the
+recommended prompting guidelines, removing the
+system prompt while keeping all other parameters
+at their default settings. The evaluation prompts
+and scripts used to extract responses from the gener-
+ated text were inspired by the format of the simple-
+evals framework>. The specific prompts used for
+MCQU, MCQM and OEQ tasks are provided in
+Appendix A.3, A.4, A.5, respectively.
+
+5.4 Metrics
+
+The evaluation metrics for each task are described
+below:
+
+Multiple-Choice Question with Unique answer
+(MCQU) For the evaluation on the MCQU
+
+3https://github.com/openai/simple-evals
+
+subset, we used Accuracy, similarly to other
+single-answer multiple-choice tasks such as
+MMLU (Hendrycks et al., 2021).
+
+Multiple-Choice Question with Multiple an-
+swers (MCQM) We used Exact Match Ratio
+(EMR) and Hamming score to evaluate multiple-
+choice questions with multiple answers, following
+previous work on this task (Labrak et al., 2022).
+The two metrics are defined as follows:
+
+1 N
+W isi = yi
+i=l
+
+where N denotes the number of questions, 7; is the
+set of predicted answers for the e question, yi is
+the set of correct answers for the i’ ’ question, and
+[x] is an indicator function that returns 1 if x is true
+and 0 otherwise.
+
+Exact Match Ratio (EMR) =
+
+7» ly Gal
+
+Hamming Score =
+Lyi Uy gil
+
+where N denotes the number of questions, yi is
+the set of correct answers for the i*” question, %;
+is the set of predicted answers for the i*” question,
+|yi O G;| is the intersection size between the correct
+and predicted answers, and |y; U §;| is the size of
+the union of correct and predicted answers.
+
+Open-Ended Question with Short-Answer
+(OEQ) To evaluate the free-text responses in
+the OEQ subset, we opted for a combination
+of lexical and contextual embedding-based met-
+rics that align with human judgments on clini-
+cal texts (Ben Abacha et al., 2023). These met-
+rics are: ROUGE-1 (Lin, 2004), BLEU-4 (Pap-
+ineni et al., 2002), and BERTScore (roberta-large-
+munli) (Zhang* et al., 2020).
+
+Given the inherent complexity of evaluating
+open-ended question answering task, where clini-
+cally acceptable responses can differ significantly
+in phrasing, we supplemented traditional metrics
+with an automatic evaluation using a LLM-as-
+Judge approach (Gu et al., 2025). This strategy
+consists of comparing model-generated responses
+with expert-provided references, allowing for more
+nuanced assessment beyond surface-level lexical
+and semantic similarity. We adopted Gemini-2.0-
+Flash (DeepMind, 2024) as the judging model. The
+model was prompted to assign a score from | to 10
+for each (question, model answer, expert answer)
+triplet, as described in the LLM-as-Judge prompt
+
+EMR (1) Hamming (1)
+Model Understanding Reasoning Avg Understanding Reasoning Avg
+Reasoning LLMs
+
+03 56.87 77.08
+DeepSeek-R1 51.12
+HuatuoGPT-o1-8B <5 8.28
+FineMedLM-ol (8B) “5 1.46
+DeepSeek-R1-Distill-Llama-8B 241
+DeepSeek-R1-Distill-Qwen2.5-7B 2.27
+GPT-4o 46.48
+DeepSeek-V3 49.18
+~ ~Qwen2'5-72B-Insttuct ~~ OB
+Llama3.3-70B-Instruct 21.72
+. _Llama-3-70B-UltraMedical “5 5 22400 0 TN 1989 62.38 58.36 59ST
+BioMistral-7B “S 0.82
+Llama-3.1-8B-UltraMedical “5 5.11
+BioMistral-7B-SFT 3.21
+
+Table 3: Performance of LLMs on the MediQAI-MCQM subset. The scores, obtained in zero-shot, are measured in
+
+terms of Exact Match Ratio (EMR) and Hamming score.
+
+in Appendix A.6. A score of 0 was assigned to
+cases where the evaluated model either failed to
+produce a final answer or generated a response that
+did not conform to the expected format and was
+therefore unparseable. Final scores were averaged
+across all examples and scaled to a 0-100 range for
+reporting.
+
+6 Results and Discussion
+
+Multiple-Choice Question with Unique answer
+Table 4 shows the performance of all evaluated
+LLMs on the MCQU subset of the MediQAI
+dataset. We observe that 03 achieves the highest
+performance on both Understanding and Reason-
+ing questions with 73.15% accuracy. Among open-
+source models, DeepSeek-R1 and DeepSeek-V3
+perform well on this subset with 67.03% and
+63.32% accuracy, even surpassing some commer-
+cial models such as GPT-40 (60.95%). In contrast,
+models like DeepSeek-R1-Distill-Llama-7@B,
+Llama-3.3-70B and Qwen2.5-72B demonstrate
+lower performance, correctly answering half of
+the questions in the test set. For smaller open-
+source models, HuatuoGPT-01-8B shows impres-
+sive results compared to others in the same size
+category, achieving 23.49% accuracy. Further-
+more, BioMistral-7B-SFT, fine-tuned on the
+MediQAI training sets, shows substantial perfor-
+mance gains of 15.64% accuracy over its base
+model, BioMistral-7B. However, open-source
+reasoning-based models encounter difficulties due
+to token limitations during generation. Manual in-
+spection of the generated text revealed that these
+models were still in the reasoning process after gen-
+erating 8,192 tokens, resulting in incomplete an-
+
+swers which negatively impacts their performance.
+
+‘Accuracy (1)
+
+Understanding Reasoning _ Avg
+Reasoning LLMs
+74.76
+
+70.63
+
+3.99
+
+FineMedLM-ol (8B) “5
+
+DeepSeek-R 1I-Distill-Llama-8B 931
+
+DeepSeek-R 1-Distill-Qwen2.5-7B 14.17
+Vanilla LLMs
+
+72B-Instruct
+Llama3.3-70B-Instruct
+
+Llama-3-70B-UltraMedical ‘5
+“BioMistral-7B STS. 12.20
+Llama-3.1-8B-UltraMedical “5
+
+BioMistral-7B-SFT <5
+
+Table 4: Performance of LLMs on the MediQAI-MCQU
+subset. The scores, obtained in zero-shot, are measured
+with Accuracy.
+
+Multiple-Choice Question with Multiple
+answers Table 3 shows the performance of all
+evaluated LLMs on the MCQM subset of the
+MediQAI dataset. The best results are achieved by
+03 with 55.05 EMR and 79.7 Hamming, followed
+closely by DeepSeek-R1 (48.88 / 77.54). Vanilla
+models such as DeepSeek-V3 and GPT-4o trail
+by 3-5 EMR points, indicating that additional
+reasoning supervision yields substantial gains.
+Distilled checkpoints of DeepSeek-R1 show
+significant performance drops (e.g. —28 EMR
+for DeepSeek-R1-Distill-Llama-7B, and —46
+EMR for DeepSeek-R1-Distill-Llama-8B),
+highlighting the trade-off imposed by aggressive
+model compression. In this task, open-source
+reasoning-based models also face the issue of
+
+ROUGE-I () BLEU-4 (1) BERTScore (1) LLM-as-Judge (1)
+Model U R__ Avg R_ Avg _U R_Avg__U R___ Avg
+Reasoning LLMs
+03 17.61 15.6 16.34 2.56 15 1.89 77.65 7648 76.91 87.4 79.07 82.16
+
+DeepSeek-R1 178 15.97 16.65 2.68 1.67 . 2
+
+HuatuoGPT-01-8B “5 8.05 0.64 0.
+FineMedLM-ol (8B) “S 9.55 9.72 9.66 0.94 0.64
+DeepSeek-R I -Distill-Llama-8B 5.76 S41 5.54 0.56 0.35
+DeepSeek-R1-Distill-Qwen2.5-7B 4.75 5.23. 5.05. 0.45__(0.34
+Vanilla LLMs
+GPT-40 16.29 14.53. 15.18 2.41 1.29
+DeepSeek-V3 15.24 15.39 . 1.36
+~ Qwen?.5-72B-Instruct ~~ ~~ 14.65 ~ 13.26 13.77 2:14 T.il 149° 75°33" 74.27 74.62” 66.87" 55.15” 59.497
+Llama3.3-70B-Instruct 14.53 | 13.59 1.02
+BioMistral-7B \S 6.53 8.61 0.61
+
+‘8B-UltraMedical <5
+BioMistral-7B-SFT <5
+
+3.91
+5.59
+
+5.69
+
+Table 5: Performance of LLMs on the MediQAI-OEQ subset. The scores, obtained in zero-shot, are measured with
+
+ROUGE-1, BLEU-4, BERTScore and LLM-as-Judge.
+
+still being in the reasoning phase after generating
+8,192 tokens, which negatively impacts their
+performance.
+
+Open-Ended Question with Short-Answer  Ta-
+ble 5 shows the performance of all evaluated LLMs
+on the OEQ subset of the MediQAI dataset. For
+free-text answers, the performance gap widens: 03
+achieves 82.16 on the LLM-as-Judge metric, versus
+74.29 for DeepSeek-R1 and 68.83 for GPT-40.
+
+Overlap metrics (ROUGE, BLEU and
+BERTScore) tend to compress differences and
+often yield trends that diverge from those observed
+with the LLM-as-Judge metric. For example,
+DeepSeek-R1 outperforms 03 on ROUGE and
+BLEU scores, while the opposite is observed with
+the LLM-as-Judge metric.
+
+We also observed that distilled reasoning mod-
+els from the DeepSeek series often reformulate
+the question as a multiple-choice question (MCQ)
+during their reasoning process, creating candidate
+options. This behavior poses a challenge when
+parsing the generated text to extract the final an-
+swer. Instead of providing a free-text response, the
+model tends to return the letter of one of the can-
+didate options it created during reasoning, without
+necessarily including the corresponding text. This
+phenomenon may partly explain the comparable
+performance of reasoning models to vanilla models,
+despite their reasoning capabilities.
+
+Medical Reasoning Performance Across all QA
+tasks, we observe a consistent performance gap be-
+tween questions that require multi-step reasoning
+and those assessing factual recall or medical un-
+derstanding. Averaged over all model-task com-
+binations reported in Tables 4, 3 and 5, accu-
+
+racy on reasoning question is 5.12 points lower
+than understanding questions. The performance
+gap varies across tasks: it is largest on OEQ
+(7.54 points), and similar for MCQU (3.90) and
+MCOQM (3.93). Reasoning-based models mitigate
+this gap to some extent but do not eliminate it. On
+MCQU and MCQM, the average performance gap
+for reasoning-augmented models is 2.15 and 2.02
+points respectively, compared to 5.49 and 5.55 for
+vanilla models. In contrast, the OEQ task shows
+a large gap for both model types: 7.79 for vanilla
+and 7.29 for reasoning models. To illustrate, on
+the OEQ task, GPT-40 show a performance gap of
+13.66 points between understanding and reason-
+ing questions, which is reduced to 8.33 with its
+reasoning-enhanced variant, 03. A similar trend is
+observed for the DeepSeek family: DeepSeek-V3
+shows a gap of 13.0, whereas DeepSeek-R1 nar-
+rows this to 9.48.
+
+Figure 2 presents paired performance compar-
+isons across three model families on both Under-
+standing and Reasoning questions:
+
+* 03 vs. GPT-40
+* DeepSeek-R1 vs. DeepSeek-V3
+
+* DeepSeek-R1-Distill-Llama-70B
+Llama-3.3-70B-Instruct
+
+vs.
+
+Two consistent trends emerge across compar-
+isons: (i) every model performs better on Un-
+derstanding than on Reasoning questions, ex-
+cept for DeepSeek-R1-Distill-Llama-70B on
+MCQU and MQCM subsets, and (ii) when compar-
+ing each reasoning model to its base version, the
+performance improvement is larger on reasoning
+questions than on understanding questions. Theses
+
+[= GPT-40 [2 DeepSeek-V3_ GI Llama3.3-70B-Instruct
+3 03 [= DeepSeek-R1 HH R1-Distill-Llama-70B
+
+[= GPT-40 [2 DeepSeek-V3_ GI Llama3.3-70B-Instruct
+3 03 [= DeepSeek-R1 HH R1-Distill-Llama-70B
+
+70
+>
+8 60
+FH
+< 50
+40
+
+60
+
+50
+40
+30
+20
+10
+
+EMR
+
+Understanding Reasoning
+
+(a) Multiple-Choice question with unique answer (MCQU)
+
+Understanding Reasoning
+
+(b) Multiple-Choice question with multiple answers (MCQM)
+
+[= GPT-40 [2 DeepSeek-V3_ GI Llama3.3-70B-Instruct
+
+3 03
+
+[= DeepSeek-R1 HH R1-Distill-Llama-70B
+
+Q x @
+38 3 8
+
+LLM-as-judge
+
+wa
+3
+
+lit
+
+S
+6
+
+Ur
+
+Understanding
+
+Reasoning
+
+(c) Open-ended question with short answer (OEQ)
+
+Figure 2: Performance of three groups of models (OpenAI, DeepSeek and LLama) on all subsets of MediQAl.
+
+difference underscore the impact of inference-time
+reasoning techniques. On MCQU, the average per-
+formance gain for reasoning question across the
+three model families is 10.67, compared to 4.02
+for understanding. Similar trends are observed in
+MCQ\M, with gains of 9.87 on reasoning versus
+3.51 on understanding. For the OEQ task, perfor-
+mance improvements are substantial in both cate-
+gories with 16.57 for understanding and 18.75 for
+reasoning questions.
+
+These findings suggest that inference-time tech-
+niques, even without access to domain-specific
+adaptation, can significantly enhance complex med-
+ical reasoning. Nonetheless, even state-of-the-art
+LLMs remain well below human-level clinical rea-
+soning in zero-shot settings. For downstream ap-
+plications in healthcare, these models will require
+external verification or human oversight.
+
+Medical Subjects Performance To better under-
+stand the strengths and weaknesses of LLMs on
+our dataset, we analyzed their performance across
+individual medical subjects for each QA task (see
+Tables 6, 7 and 8 in Appendix). In the MCQU task,
+the models performed best on subjects such as ge-
+netics, anatomy, dermatology, physiology, otorhi-
+nolaryngology (ENT), ophtalmology, neurology
+and hematology, all achieving over 80% accuracy.
+Conversely, subjects like cytology (notably low
+
+at 16.67% due to limited limited examples in the
+dataset), epidemiology, and psychiatry showed the
+lowest performance with accuracy below 60%. In
+the MQCM task, the easiest subjects for LLMs
+were dermatology, genetics, and microbiology (all
+above 65% EMR), while rehabilitation, occupa-
+tional medicine, and pathological anatomy were
+the most challenging, with scores under 40% EMR.
+Finally, in the OEQ task, the best-performing sub-
+jects were bacteriology, parasitology, and semiol-
+ogy, each with LLM-as-Judge scores above 90%,
+whereas occupational medicine and endocrinology
+and metabolism were among the lowest, with score
+falling below 70%. These results highlight that
+LLMs’ capabilities vary significantly by medical
+domain and question type, with certain specialized
+or interdisciplinary fields remaining particularly
+challenging.
+
+7 Conclusion
+
+In this work, we introduce MediQAl, a novel
+dataset for medical question answering in French.
+This dataset includes three tasks: (i) Multiple-
+Choice Question with Unique answer (MCQU),
+(ii) Multiple-Choice Question with Multiple an-
+swers (MCQM), and (iii) Open-Ended Question
+with Short-Answer (OEQ). MediQAI covers a wide
+range of medical subjects and is designed to chal-
+
+lenge models’ reasoning and comprehension across
+various cognitive tasks.
+
+This work addresses significant gaps in current
+medical benchmarks by introducing new tasks for
+French and expanding resources beyond English
+and Chinese. We evaluated 14 models on MediQAl
+and demonstrated that reasoning-based models out-
+perform vanilla LLMs on various question answer-
+ing tasks.
+
+Acknowledgments
+
+This work was performed using HPC re-
+sources from GENCI-IDRIS (Grant 2024-
+ADO11013715R2). This work was financially
+supported by ANR MALADES (ANR-23-IAS 1-
+0005).
+
+Ethical Statement
+
+This study required substantial computational re-
+sources, for a total of approximately 4,000 hours
+on A100 80GB GPUs. These resources were
+dedicated to models evaluations, experimentation
+with various models, and debugging. According
+to documentation from the Jean Zay supercom-
+puter*, the total environmental cost amounted to
+1,036,000 Wh or 59.05 kg CO2eq, based on the
+carbon intensity of the energy grid as reported in
+the BLOOM environmental cost study conducted
+on Jean Zay (Luccioni et al., 2022). Additionally,
+the total inference cost on API for the data augmen-
+tation strategies, the LLM-as-Judge evaluation, and
+the zero-shot evaluation of 03, GPT-40, DeepSeek-
+RI and DeepSeek-V3 on the three tasks amounted
+to 346 USD.
+
+References
+
+Ifigo Alonso, Maite Oronoz, and Rodrigo Agerri. 2024.
+Medexpgqa: Multilingual benchmarking of large lan-
+guage models for medical question answering. Artifi-
+cial Intelligence in Medicine, 155:102938.
+
+Andrew Michael Bean, Karolina Korgul, Felix Krones,
+Robert McCraith, and Adam Mahdi. 2024. Do large
+language models have shared weaknesses in medical
+question answering? In Advancements In Medical
+Foundation Models: Explainability, Robustness, Se-
+curity, and Beyond.
+
+Asma Ben Abacha, Wen-wai Yim, George Michalopou-
+los, and Thomas Lin. 2023. An investigation of eval-
+uation methods in automatic medical note generation.
+
+‘http://www. idris.fr/media/jean-zay/jean-zay-conso-
+heure-calcul.pdf
+
+In Findings of the Association for Computational
+Linguistics: ACL 2023, pages 2575-2588, Toronto,
+Canada. Association for Computational Linguistics.
+
+Junying Chen, Zhenyang Cai, Ke Ji, Xidong Wang,
+Wanlong Liu, Rongsheng Wang, Jianye Hou, and
+Benyou Wang. 2024. Huatuogpt-ol, towards
+medical complex reasoning with Ilms. Preprint,
+arXiv:2412.18925.
+
+Google DeepMind. 2024. Introducing Gemini 2.0:
+our new ai model for the agentic era. https:
+//blog.google/technology/google-deepmind/
+google-gemini-ai-update-december-2024/.
+
+DeepSeek-AI. 2024. Deepseek-v3 technical report.
+Preprint, arXiv:2412.19437.
+
+DeepSeek-AI. 2025. Deepseek-r1: Incentivizing rea-
+soning capability in Ilms via reinforcement learning.
+Preprint, arXiv:2501.12948.
+
+Krishno Dey, Prerona Tarannum, Md. Arid Hasan, Im-
+ran Razzak, and Usman Naseem. 2024. Better to
+ask in english: Evaluation of large language models
+on english, low-resource and cross-lingual settings.
+Preprint, arXiv:2410.13153.
+
+Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri,
+Abhinav Pandey, Abhishek Kadian, Ahmad Al-
+Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-
+ten, Alex Vaughan, Amy Yang, and Angela Fan
+et al. 2024. The llama 3 herd of models. Preprint,
+arXiv:2407.21783.
+
+Jiawei Gu, Xuhui Jiang, Zhichao Shi, Hexiang Tan,
+Xuehao Zhai, Chengjin Xu, Wei Li, Yinghan Shen,
+Shengjie Ma, Honghao Liu, Saizhuo Wang, Kun
+Zhang, Yuanzhuo Wang, Wen Gao, Lionel Ni,
+and Jian Guo. 2025. A survey on llm-as-a-judge.
+Preprint, arXiv:2411.15594.
+
+Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou,
+Mantas Mazeika, Dawn Song, and Jacob Steinhardt.
+2021. Measuring massive multitask language under-
+standing. In Jnternational Conference on Learning
+Representations.
+
+Albert Q. Jiang, Alexandre Sablayrolles, Arthur Men-
+sch, Chris Bamford, Devendra Singh Chaplot, Diego
+de las Casas, Florian Bressand, Gianna Lengyel, Guil-
+laume Lample, Lucile Saulnier, Lélio Renard Lavaud,
+Marie-Anne Lachaux, Pierre Stock, Teven Le Scao,
+Thibaut Lavril, Thomas Wang, Timothée Lacroix,
+and William El Sayed. 2023. Mistral 7b. Preprint,
+arXiv:2310.06825.
+
+Di Jin, Eileen Pan, Nassim Oufattole, Wei-Hung Weng,
+Hanyi Fang, and Peter Szolovits. 2021. What disease
+does this patient have? a large-scale open domain
+question answering dataset from medical exams. Ap-
+plied Sciences, 11(14).
+
+Yiqiao Jin, Mohit Chandra, Gaurav Verma, Yibo Hu,
+Munmun De Choudhury, and Srijan Kumar. 2024.
+Better to ask in english: Cross-lingual evaluation of
+
+large language models for healthcare queries. In Pro-
+ceedings of the ACM Web Conference 2024, WWW
+°24, page 2627-2638, New York, NY, USA. Associa-
+tion for Computing Machinery.
+
+Yanis Labrak, Adrien Bazoge, Richard Dufour, Beatrice
+Daille, Pierre-Antoine Gourraud, Emmanuel Morin,
+and Mickael Rouvier. 2022. FrenchMedMCQA: A
+French multiple-choice question answering dataset
+for medical domain. In Proceedings of the 13th In-
+ternational Workshop on Health Text Mining and
+Information Analysis (LOUHI), pages 41-46, Abu
+Dhabi, United Arab Emirates (Hybrid). Association
+for Computational Linguistics.
+
+Yanis Labrak, Adrien Bazoge, Richard Dufour, Mick-
+ael Rouvier, Emmanuel Morin, Béatrice Daille, and
+Pierre-Antoine Gourraud. 2023. DrBERT: A robust
+pre-trained model in French for biomedical and clini-
+cal domains. In Proceedings of the 61st Annual Meet-
+ing of the Association for Computational Linguis-
+tics (Volume 1: Long Papers), pages 16207-16221,
+Toronto, Canada. Association for Computational Lin-
+guistics.
+
+Yanis Labrak, Adrien Bazoge, Emmanuel Morin, Pierre-
+Antoine Gourraud, Mickael Rouvier, and Richard
+Dufour. 2024. BioMistral: A collection of open-
+source pretrained large language models for medical
+domains. In Findings of the Association for Compu-
+tational Linguistics: ACL 2024, pages 5848-5864,
+Bangkok, Thailand. Association for Computational
+Linguistics.
+
+Jing Li, Shangping Zhong, and Kaizhi Chen. 2021.
+MLEC-QA: A Chinese Multi-Choice Biomedical
+Question Answering Dataset. In Proceedings of the
+2021 Conference on Empirical Methods in Natural
+Language Processing, pages 8862-8874, Online and
+Punta Cana, Dominican Republic. Association for
+Computational Linguistics.
+
+Chin-Yew Lin. 2004. ROUGE: A package for auto-
+matic evaluation of summaries. In Text Summariza-
+tion Branches Out, pages 74-81, Barcelona, Spain.
+Association for Computational Linguistics.
+
+Alexandra Sasha Luccioni, Sylvain Viguier, and Anne-
+Laure Ligozat. 2022. Estimating the carbon foot-
+print of bloom, a 176b parameter language model.
+Preprint, arXiv:2211.02001.
+
+Saeel Sandeep Nachane, Ojas Gramopadhye, Prateek
+Chanda, Ganesh Ramakrishnan, Kshitij Sharad Jad-
+hav, Yatin Nandwani, Dinesh Raghu, and Sachin-
+dra Joshi. 2024. Few shot chain-of-thought driven
+reasoning to prompt Ilms for open ended medical
+question answering. Preprint, arXiv:2403.04890.
+
+OpenAI. 2024a. Gpt-4o0 system card.
+arXiv:2410.21276.
+
+Preprint,
+
+OpenAI. 2024b. Openai ol system card. Preprint,
+arXiv:2412.16720.
+
+Ankit Pal, Logesh Kumar Umapathi, and Malaikannan
+Sankarasubbu. 2022. Medmcga: A large-scale multi-
+subject multi-choice dataset for medical domain ques-
+tion answering. In Proceedings of the Conference
+on Health, Inference, and Learning, volume 174 of
+Proceedings of Machine Learning Research, pages
+248-260. PMLR.
+
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic evalu-
+ation of machine translation. In Proceedings of the
+40th Annual Meeting on Association for Computa-
+tional Linguistics, ACL ’02, page 311-318, USA.
+Association for Computational Linguistics.
+
+Amandine Quercia, Jamil Zaghir, Christian Lovis, and
+Christophe Gaudet-Blavignac. 2024. MedFrench-
+mark, a small set for benchmarking generative LLMs
+in medical french. Stud. Health Technol. Inform.,
+316:601-605.
+
+Xiaoming Shi, Zeming Liu, Li Du, Yuxuan Wang, Hon-
+gru Wang, Yuhang Guo, Tong Ruan, Jie Xu, Xiaofan
+Zhang, and Shaoting Zhang. 2024. Medical dialogue
+system: A survey of categories, methods, evaluation
+and challenges. In Findings of the Association for
+Computational Linguistics: ACL 2024, pages 2840-
+2861, Bangkok, Thailand. Association for Computa-
+tional Linguistics.
+
+Karen Sparck Jones. 1972. A statistical interpretation
+of term specificity and its application in retrieval.
+Journal of documentation, 28(1):11-21.
+
+Qwen Team. 2024. Qwen2.5: A party of foundation
+models.
+
+David Vilares and Carlos Gémez-Rodriguez. 2019.
+HEAD-QA: A healthcare dataset for complex reason-
+ing. In Proceedings of the 57th Annual Meeting of
+the Association for Computational Linguistics, pages
+960-966, Florence, Italy. Association for Computa-
+tional Linguistics.
+
+Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni,
+Abhranil Chandra, Shiguang Guo, Weiming Ren,
+Aaran Arulraj, Xuan He, Ziyan Jiang, Tianle Li, Max
+Ku, Kai Wang, Alex Zhuang, Rongqi Fan, Xiang
+Yue, and Wenhu Chen. 2024. MMLU-pro: A more
+robust and challenging multi-task language under-
+standing benchmark. In The Thirty-eight Conference
+on Neural Information Processing Systems Datasets
+and Benchmarks Track.
+
+Lawrence K. Q. Yan, Qian Niu, Ming Li, Yichao Zhang,
+Caitlyn Heqi Yin, Cheng Fei, Benji Peng, Ziqian Bi,
+Pohsun Feng, Keyu Chen, Tianyang Wang, Yunze
+Wang, Silin Chen, Ming Liu, and Junyu Liu. 2024.
+Large language model benchmarks in medical tasks.
+Preprint, arXiv:2410.21348.
+
+Hongzhou Yu, Tianhao Cheng, Ying Cheng, and Rui
+Feng. 2025. Finemedlm-ol: Enhancing the medical
+reasoning ability of Ilm from supervised fine-tuning
+to test-time training. Preprint, arXiv:2501.09213.
+
+Kaiyan Zhang, Sihang Zeng, Ermo Hua, Ning Ding,
+Zhang-Ren Chen, Zhiyuan Ma, Haoxin Li, Ganqu
+Cui, Biqing Qi, Xuekai Zhu, Xingtai Lv, Hu Jinfang,
+Zhiyuan Liu, and Bowen Zhou. 2024. Ultramedi-
+cal: Building specialized generalists in biomedicine.
+Preprint, arXiv:2406.03949.
+
+Tianyi Zhang*, Varsha Kishore*, Felix Wu*, Kilian Q.
+Weinberger, and Yoav Artzi. 2020. Bertscore: Eval-
+uating text generation with bert. In International
+Conference on Learning Representations.
+
+Yuxin Zuo, Shang Qu, Yifei Li, Zhangren Chen, Xuekai
+Zhu, Ermo Hua, Kaiyan Zhang, Ning Ding, and
+Bowen Zhou. 2025. Medxpertqa: Benchmarking
+expert-level medical reasoning and understanding.
+Preprint, arXiv:2501.18362.
+
+A Prompts
+A.1_ Medical Subjects Prompt
+
+Medical Subjects Annotation Prompt
+You are an experienced medical doctor and independent practitioner. Your task will be to label a
+clinical scenario according to the medical subject it corresponds to.
+
+You will be given a list of medical subjects, followed by a clinical scenario. Please determine
+which subject the clinical scenario best pertains to. If the clinical scenario is related to multiple
+subjects, only select the most relevant one.
+
+Directly output the name of the final subject you selected from the list of available subjects.
+**Subjects:**
+
+Cardiologie et Pathologie Vasculaire, Hépato-Gastro-Entérologie, Pneumologie, Néphro-Urologie,
+
+Psychiatrie, Hématologie, Endocrinologie-Métabolisme, Gynécologie-Obstétrique, Rhumatologie,
+Neurologie, Maladies Infectieuses, Dermatologie, Pédiatrie, Oto-Rhino-Laryngologie, Ophtal-
+mologie, Immunologie, Orthopédie, Pharmacologie, Médecine Légale et Toxicologie, Anatomie
+pathologique, Biochimie, Epidémiologie, Génétique, Médecine du Travail, Microbiologie, Para-
+sitologie, Rééducation, Physiologie, Histologie, Radiologie, Cytologie, Embryologie, Anatomie,
+Urgences
+
+** Clinical scenario:**
+{clinical_scenario}
+
+**Output:**
+
+Figure 3: Prompt for Medical Subjects Annotation in the MediQAI-OEQ subset. The list of medical subjects in the
+prompt was made from the list of medical subjects from MCQU and MCQM subsets.
+
+A.2 Understanding or Reasoning Annotation Prompt
+
+Understanding/Reasoning Annotation Prompt
+You are an experienced medical doctor and independent practitioner. Your task will be to determine
+whether a medical question primarily challenges the answerer’s medical knowledge understanding
+or medical reasoning skills.
+
+You will be given the question. Please determine whether the question primarily challenges the
+answerer’s medical knowledge understanding or medical reasoning ability.
+
+Reasoning : complicated, reasoning-heavy questions.
+
+Understanding : little to no reasoning and instead assess skills such as medical knowledge.
+
+Directly output either "Understanding" Or "Reasoning" as your answer without any additional
+information or explanations.
+
+**Clinical scenario:**
+{clinical_scenario}
+
+**Question:**
+{question}
+
+**Output:**
+
+Figure 4: Prompt for labeling questions as Reasoning or Understanding.
+
+A.3 Prompt for Zero-Shot Evaluation on the MCQU Subset
+
+MCQU Prompt
+You are an experienced medical doctor and independent practitioner. Your task is to answer the
+following medical multiple-choice question. There is only one correct choice. The last line of your
+response should be of the following format: ’Answer: $LETTER’ (without quotes) where LETTER
+is one of ABCDE. Think step by step before answering.
+
+**Clinical scenario:**
+{clinical_scenario}
+
+**Question:**
+
+{question}
+
+(A) {option_A}
+(B) {option_B}
+(C) {option_C}
+(D) {option_D}
+(E) {option_E}
+
+Figure 5: Prompt for zero-shot evaluation of LLMs on the MCQU subset. The clinical scenario is optional in the
+prompt.
+
+A.4_ Prompt for Zero-Shot Evaluation of LLMs on the MCQM Subset
+
+MCQM Prompt
+You are an experienced medical doctor and independent practitioner. Your task is to answer
+
+the following medical multiple-choice question. Multiple selections are required; single-choice
+
+answers are not accepted. The last line of your response should be of the following format:
+“Answer: $LETTERS’ (without quotes) where LETTERS are multiple letters of ABCDE, separated
+by commas (e.g., A,B,C). Think step by step before answering.
+
+**Clinical scenario:**
+{clinical_scenario}
+**Question:**
+{question}
+
+(A) {option_A}
+
+(B) {option_B}
+
+(C) {option_C}
+
+(D) {option_D}
+
+(E) {option_E}
+
+Figure 6: Prompt for zero-shot evaluation of LLMs on the MCQM subset. The clinical scenario is optional in the
+prompt.
+
+A.5 Prompt for Zero-Shot Evaluation of LLMs on the OEQ Subset
+
+OEQ Prompt
+You are an experienced medical doctor and independent practitioner. Your task is to answer the
+following medical question in French by providing a well-structured and concise response. The
+last line of your response should be of the following format: ’Answer: $TEXT’ (without quotes)
+where TEXT is your final answer in French. Think step by step before answering.
+
+**Clinical scenario:**
+{clinical_scenario}
+
+**Question:**
+
+{question}
+
+Figure 7: Prompt for zero-shot evaluation of LLMs on the OEQ subset. The clinical scenario is optional in the
+prompt.
+
+A.6 Prompt for LLM-as-Judge Evaluation on the OEQ Subset
+
+LLM-as-Judge Prompt
+
+[System]
+
+Please act as an impartial judge and evaluate the quality of the response provided by an AI
+assistant to the French medical question displayed below. Your evaluation should consider clinical
+correctness, factual coverage and the impact of differences between the answers on patient safety
+and care. You will be given a reference answer (Expert-provided answer) and the assistant’s
+answer (Model-generated answer). Your job is to evaluate how closely a Model-generated answer
+aligns with an Expert-provided answer. Base your judgment only on the Expert’s provided answer,
+and never rely on your own medical knowledge or external resources. Begin your evaluation by
+comparing the assistant’s answer with the reference answer. Avoid any position biases and ensure
+that the order in which the responses were presented does not influence your decision. Do not
+allow the length of the responses to influence your evaluation. Be as objective as possible. After
+providing your explanation, you must rate the response on a scale of 1 to 10 by strictly following
+this format "Rating: [[rating]]", for example: "Rating: [[5]]".
+
+[Medical Question]
+
+{question}
+
+[The Start of Expert Answer]
+
+{answer_ref}
+
+[The End of Expert Answer]
+[The Start of Assistant Answer]
+
+{answer_a}
+[The End of Assistant Answer]
+
+Figure 8: Prompt for LLM-as-judge evaluation of LLMs on the OEQ subset.
+
+B Models Performance on Medical Subjects
+
+2 2
+
+¥ ¥ “3
+
+$ $ 7
+
+> ge &
+
+Medical Subject ‘7 s s ¢
+‘Anatomy T7778 | 8889 83.33 50.0
+Pathological Anatomy 66.67 | 61.54 53.85 | 4744 | 35.9
+Biochemistry 71.84 | 73.79 65.05 | 52.43 | 43.69
+Cardiology 78.59 | 7431 6739 | 46.48 | 46.48
+Cytology 16.67 | 16.67 16.67 | 16.67 | 16.67
+Dermatology 832 | 73.6 760 | 512 | 520
+Embryology 66.67 | 66.67 66.67 | 66.67 | 66.67
+Endocrinology and Metabolism 72.95 | 67.15 61.34 | 4251 | 41.06
+Epidemiology 53.61 | 49.48 45.36 | 40.21 | 34.02
+Gynecology and Obstetrics 68.93 | 62.86 55.0 | 44.29 | 41.79
+Genetics 88.89 | 88.89 sio4 | 625 | Lil
+Histology 76.06 | 60.56 59.15 | 46.48 | 45.07
+Hematology 80.76 | 71.61 67.19 | 4795 | 42.59
+Hepato-Gastroenterology 64.03 | 59.71 5647 | 41.01 | 40.29
+Immunology 68.13 | 70.33 33 61.54 | 57.14 | 43.96
+Infectious Diseases 73.96 | 66.15 | 47.92 26 64.58 | 49.48 | 40.62
+Microbiology 68.25 | 63.49 | 3651 3.17 58.73 | 46.03 | 47.62
+Forensic Medicine and Toxicology | 72.73 | 47.47 | 43.43 3.03 51.52 | 36.36 | 35.35
+Occupational Medicine 7787 | 70.09 | 41.12 28 62.62 | 38.32 | 42.99
+Neurology 80.79 | 72.88 | 53.11 3.95 75.14 | 46.89 | 44.07 56
+Nephro-Urology 7387 | 7137 | 48.46 2.64 63.28 | 48.02 | 43.61 : 1.89 | 11389 | 27.75
+Ophthalmology 83.16 | 80.0 | 53.68 3.42 7684 | 63.16 | 5684 | 6211 | 947 | 22.11 | 32.63
+Orthopedics 70.93 | 64.53 | 52.33 3.49 64.53 | 47.67 | 45.93 | 33.72 1047 | 28.49
+Otorhinolaryngology (ENT) 81.89 | 75.59 | 55.12 3.15 72.44 | 50.39 | 4724 | 44.09 1732 | 378
+Parasitology 78.26 | 63.04 | 43.48 87 63.04 | 45.65 | 500 | 52.17 1739 | 23.91
+Pharmacology 72.22 | 66.67 | 53.7 741 oil | 5556 | 5741 | 37.04 12.96 | 37.04
+Physiology 8261 | 8261 | 5072 | 17.39 | 145 84.06 | 52.17 | 50.72 | 49.28 10.14 | 28.99
+Pulmonology 66.13 | 5887 | 44.76 | 21.77 | 484 5685 | 42.74 | 42.34 | 36.69 125 | 29.44
+Psychiatry 59.86 | 43.59 | 38.73 | 21.83 | 141 45.77 | 2887 | 4296 | 3732 | 1197 | 9.86 | 29.58
+Pediatrics 69.77 4744 | 23.26 | 6.05 60.93 | 50.23 | 39.07 13.49 | 30.7
+Radiology 75.0 250 | 714 | 00 71.43 | 39.29 | 28.57 10.71 | 17.86
+Rheumatology 74.64 4545 | 28.23 | 4.78 63.64 | 36.84 | 378 13.88 | 24.88
+
+Table 6: Performance by medical subject on the MediQAI-MCQU subset. The scores, obtained in zero-shot, are
+measured with Accuracy.
+
+Medical Subject
+
+>
+
+Pathological Anatomy
+Biochemistry
+
+Cardiology
+
+Dermatology
+
+Endocrinology and Metabolism
+Epidemiology
+
+Gynecology and Obstetrics
+Genetics
+
+Hematology
+Hepato-Gastroenterology
+Immunology
+
+Infectious Diseases
+Microbiology
+
+Forensic Medicine and Toxicology
+Occupational Medicine
+Neurology
+
+Nephro-Urology
+Ophthalmology
+
+Orthopedics
+Otorhinolaryngology (ENT)
+Parasitology
+
+Pharmacology
+
+Pulmonology
+
+Psychiatry
+
+Pediatrics
+
+Rheumatology
+
+Rehabilitation
+
+Ba
+46.67
+62.03
+66.67
+48.89
+46.15
+50.27
+164
+62.96
+50.0
+35.22
+47.14
+65.79
+47.62
+38.33
+63.29
+56.34
+59.23
+54.37
+62.77
+56.0
+49.23
+45.97
+47.88
+52.41
+64.48
+0.0
+
+57.69
+41.75
+54.01
+64.0
+46.15
+43.13
+42.42
+47.59
+60.11
+0.0
+
+9.43 E T89 | 189 | 139 32.08 16.98 | 15.09 | 00 755
+22.22 . 0.0 0.0 2.22 S111 20.0 22.22 | 0.0 0.0
+
+27.85 ¥ 1.27 | 211 | 295 48.52 18.57 | 23.21 | 0.84 | 5.49
+27.04 e 0.0 252 | 44 54.09 17.61 | 16.35 | 1.26 | 3.77
+18.89 . 1.67 | 1.67 | 2.22 45.56 | 29.44 | 19.44 | 21.11 | 1.67 | 8.89
+21.54 . 154 | 154 | 10.77 44.62 | 23.08 | 15.38 | 27.69 | 154 | 9.23
+16.22 . 0.54 | 486 | 2.16 373 25.95 | 23.24 | 14.59 | 27 3.78
+29.85 149 | 2.99 | 4.48 65.67 | 41.79 | 32.84 | 29.85 | 1.49 | 7.46
+25.93 . 0.0 231 | 2.31 50.93 | 31.94 | 14.35 | 17.59 | 046 | 6.48
+16.96 . 13 13 3.48 42.61 | 25.65 | 16.09 | 15.22 | 0.0 1.74
+23.88 4 149 | 2.99 | 1.49 50.75 | 35.82 | 34.33 | 29.85 | 0.0 5.97
+16.43 x 0.71 | 5.0 071 42.14 | 24.29 | 17.86 | 15.0 143 | 4.29
+36.84 . 0.0 0.0 0.0 71.05 | 3158 | 36.84 | 21.05 | 263 | 5.26
+19.05 . 19 2.86 | 19 32.38 | 24.76 | 18.1 13.33 | 0.0 2.86
+8.33 x 0.0 1.67 | 5.0 31.67 | 18.33 | 6.67 10.0 0.0 1.67
+22.78 . 1.27 | 19 19 52.53 | 37.97 | 20.89 | 28.48 | 0.63 | 6.33
+23.0 x 1.88 | 0.94 | 188 45.54 | 31.92 | 19.25 | 17.37 | 0.0 16
+27.69 x 1.54 | 0.77 | 0.0 54.62 | 36.92 | 26.15 | 30.0 231 | 154
+22.33 . 0.97 | 194 | 291 43.69 | 31.07 | 11.65 | 13.59 | 0.97 | 4.85
+14.6 5. 146 | 438 | 1.46 46.72 | 30.66 | 19.71 | 19.71 | 292 | Sal
+24.0 . 0.0 0.0 0.0 56.0 44.0 28.0 32.0 0.0 40
+
+23.08 . 3.08 | 6.15 | 3.08 50.77 | 27.69 | 20.0 20.0 0.0 6.15
+14.69 . 0.95 | 0.95 | 0.95 39.34 | 27.49 | 14.22 | 15.64 | 142 | 6.64
+16.36 x 0.0 182] 1 36.97 | 26.06 | 9.09 19.39 | 0.61 | 4.85
+17.93 . 0.69 | 2.76 | 1.38 42.07 | 27.59 | 11.03 | 16.55 | 1.38 | 4.14
+21.31 . 1.64 | 1.64 | 164 56.28 | 34.43 | 24.04 | 21.86 | 0.0 437
+0.0 . 0.0 0.0 0.0 0.0 50.0 0.0 0.0 0.0 0.0
+
+Table 7: Performance by medical su
+
+measured with EMR.
+
+bject on the MediQAI-MCQM subset. The scores, obtained in zero-shot, are
+
+2
+2 §
+3
+SI =
+> S
+= =
+ys
+F 3 - 2
+¥ ¥
+é $ € » £ yg
+. & § &§ g§ g§ & 8
+Medical Subject iy y ¥ ¥ y eo y os
+Bacteriology WEST | 95.29 | 85.88 27.65 | 21.76 | 87.06 | 7588 | 8647
+Cardiology 80.74 | 73.46 | 65.35 21.29 | 11.2 | 6995 | sim | 59.63 | 47.93
+Pediatric Cardiology 81.08 | 71.62 | 6276 15.22 | 11.63 | 67.07 | 54.18 | 54.29 | 46.57
+Dermatology 80.74 | 71.48 | 62.22 isis | 7.22 | 6278 | 47.04 | 55.0 | 40.93
+Endocrinology and Metabolism 66.25 | 60.42 | 45.0 10.42 | 10.0 | 5625 | 4458 | 50.0 | 33.75
+Gynecology and Obstetrics sio1 | 70.2 | 649 20.27 | 1255 | 6872 | 48.46 | 62.75 | 51.95
+Genetics 8554 | 80.92 | 74.15 19.54 | 20.15 | 74.92 | 56.62 | 66.15 | 50.92
+Hematology 86.42 | 78.54 | 67.59 17.59 | 927 | 69.85 | 60.22 | 59.12 | 49.56
+Hepato-Gastroenterology 74a. | 66.32 | 52.94 1721 | 721 | 55.88 | 42.06 | 50.15 | 41.03
+Immunology 76.88 | 78.12 | 75.0 26.25 | 1438 | 700 | 59.38 | 64.38 | 54.38
+Infectious Diseases 73.75 | 70.68 | 37.39 14.89 | 8.86 | 62.73 | 44.32 | 53.18 | 4057
+Forensic Medicine and Toxicology | 77.79 | 66.63 | 59.53 17.56 | 953 | 59.19 | 46.28 | 49.77 | 43.37
+Occupational Medicine 4.38 | 50.0 | 38.75 1125 | 938 | 43.75 | 325 | 300 | 30.62
+Neurology 792 | 73.13 | 64.2 1833 | 9.0 | 63.73 | 49.0 | 5687 | 45.2
+Nephro-Urology 358 | 75.85 | 66.11 18.13 | 10.62 | 701 | s4.o9 | s9.s4 | 48.39 | 11.
+Ophthalmology 771 | 69.03 | 36.13 19.68 | 645 | 6032 | 46.13 | 6226 | 400 | 11.29
+Orthopedics 7731 | 68.28 | 528 17.85 | 1022 | 6118 | 45.7 | si.os | 42.47 | 1151
+Otorhinolaryngology (ENT) 80.95 | 73.73 | 67.54 1833 | 952 | 6659 | s4.os | 61.03 | 48.89 | 18.41
+Parasitology 94.35 | 93.04 | 86.09 29.57 | 1739 | 8609 | 73.48 | 84.78 | 53.04 | 7.39
+Pharmacy 86.51 | 79.29 | 71.96 19.36 | 9.07 | 75.04 | 544 | 65.79 | 49.68 | 17.03
+Pharmacology 68.89 | 75.56 | 62.22 32.22 | 8.89 | 62.22 | 4444 | 48.89 | 2667 | 10.0
+Pulmonology 80.6 | 72.77 | 612 18.26 | 9.08 | 65.0 | 4853 | s9s4 | 47.61 | 17.93
+Psychiatry 785 | 69.12 | 62.38 22.0 | 912 | 6362 | 460 | 600 | 47.12 | 14.62
+Pediatrics ssu1 | 74.47 | 53.62 183 | 915 | 65.74 | 43.83 | s2ss | 45.74 | 9.57
+Rheumatology 75.14 | 65.14 | 58.38 16.22 | 811 | 5892 | 46.22 | 48.92 | 37.03 | 9.73
+Intensive Care 76.95 | 72.79 | 66.1 is.91 | 7.99 | 64.87 | 45.78 | 5831 | 44.48 | 15.45
+Rehabilitation 750 | 61.67 | 53.33 28.33 | 10.0 | soo | 33.33 | 6667 | 500 | 100
+Public Health 71.05 | 64.74 | 43.68 27.37 | 1842 | 5053 | 39.47 | 5211 | 400 | 18.42
+Semiology 950 | 95.0 | 85.0 5.0 10.0 | 850 | 65.0 | 650 | soo | 00
+Emergency Medicine 74.13 | 65.05 | 59.82 16.88 | 835 | 5853 | 4248 | s4.o4 | 43.49 | 11.83
+
+Table 8: Performance by medical subject on the MediQAI-OEQ subset. The scores, obtained in zero-shot, are
+
+measured with LLM-as-judge.
+

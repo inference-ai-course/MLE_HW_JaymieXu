@@ -1,0 +1,3106 @@
+arXiv:2507.20906v1 [cs.CL] 28 Jul 2025
+
+SOFT INJECTION OF TASK EMBEDDINGS OUTPER-
+FORMS PROMPT-BASED IN-CONTEXT LEARNING
+
+Jungwon Park', Wonjong Rhee! :?*
+
+‘Department of Intelligence and Information, Seoul National University
+?Interdisciplinary Program in Artificial Intelligence, Seoul National University
+{quoded97, wrhee}@snu.ac.kr
+
+ABSTRACT
+
+In-Context Learning (ICL) enables Large Language Models (LLMs) to perform
+tasks by conditioning on input-output examples in the prompt, without requir-
+ing any update in model parameters. While widely adopted, it remains unclear
+whether prompting with multiple examples is the most effective and efficient way
+to convey task information. In this work, we propose Soft Injection of task em-
+beddings. The task embeddings are constructed only once using few-shot ICL
+prompts and repeatedly used during inference. Soft injection is performed by
+softly mixing task embeddings with attention head activations using pre-optimized
+mixing parameters, referred to as soft head-selection parameters. This method
+not only allows a desired task to be performed without in-prompt demonstrations
+but also significantly outperforms existing ICL approaches while reducing mem-
+ory usage and compute cost at inference time. An extensive evaluation is per-
+formed across 57 tasks and 12 LLMs, spanning four model families of sizes from
+4B to 70B. Averaged across 57 tasks, our method outperforms 10-shot ICL by
+10.1%-13.9% across 12 LLMs. Additional analyses show that our method also
+serves as an insightful tool for analyzing task-relevant roles of attention heads,
+revealing that task-relevant head positions selected by our method transfer across
+similar tasks but not across dissimilar ones—underscoring the task-specific nature
+of head functionality. Our soft injection method opens a new paradigm for reduc-
+ing prompt length and improving task performance by shifting task conditioning
+from the prompt space to the activation spac!
+
+1 INTRODUCTION
+
+In-context learning (ICL) (Brown et al.| has emerged as a key mechanism for enabling general-
+purpose use of LLMs, allowing models to perform tasks using only a few input-output examples in
+the prompt, without model finetuning. A substantial body of research has focused on explaining
+ICL’s effectiveness or developing prompt engineering to improve its performance (Xie et al.|/2021|
+2022} (Dong et al.| 2022} Ye et al. 2022} Wies et al.|/2023}|Agarwal|
+[2024] (2025). However, it remains unclear whether prompting with multiple
+demonstrations is truly the most effective and efficient way to convey task information. In this work,
+we challenge this assumption by introducing a method that can potentially replace ICL—exceeding
+its performance while significantly reducing inference-time memory usage and compute cost.
+
+Our approach draws inspiration from two prior works: Function Vector (FV) (Todd et al.| |2023)
+and DARTS 2018). Although FV has limited performance, it demonstrates that task
+
+information can be directly injected into model activations to guide behavior without input-output
+demonstrations in the prompt. DARTS, a well-known method for neural architecture search (Zoph|
+[& Le} [2016), exemplifies how a continuous relaxation of a discrete search space enables efficient
+gradient-based optimization to solve challenging deep learning problems. Building on such previous
+works, we propose a task embedding injection method that formulates injection as a simple contin-
+uous optimization problem, learning a task-specific soft injection strategy via gradient descent.
+
+“Corresponding Author.
+
+‘Our code is available at https: //github.com/SNU-DRL/Soft_Injection
+
+Our method, called SITE (Soft Injection of Task Embeddings), constructs task embeddings and op-
+timizes soft head-selection parameters only once per task. During inference with zero-shot prompts,
+the task embeddings—which encode task-relevant information—are mixed with the original attention
+head activations, using the soft head-selection parameters as interpolation weights. This allows
+LLMs to perform tasks without input-output examples in the prompt, while achieving significant
+performance gains over few-shot ICL baselines. We evaluate SITE on 57 ICL tasks (29 abstractive
+and 28 extractive) across 12 LLMs spanning 4 model families, 3 model variants, and model sizes
+ranging from 4B to 70B parameters. SITE achieves average performance gains of 10.1%-13.9%
+over 10-shot ICL, demonstrating strong task performance across diverse LLMs.
+
+Although SITE is not explicitly designed for attributional analysis, we find that it serves as a valu-
+able tool for analyzing task-relevant roles of attention heads. A series of analyses show that our
+method not only identifies task-relevant heads, but also reveals that the selected head positions trans-
+fer across similar tasks but not across dissimilar ones—highlighting the task-specific nature of head
+functionality. Additionally, we present four empirical findings: (1) validation loss drops signifi-
+cantly during training, indicating effective optimization of head-selection parameters, (2) increasing
+the number of examples (or shots) in prompt-based ICL from a few to many does not always im-
+prove performance-some tasks remain challenging even with many-shot prompting, while SITE
+addresses them effectively, (3) a single 10-shot prompt is sufficient to construct task embeddings
+that significantly outperform 10-shot ICL, highlighting the importance of precise injection over the
+number of demonstrations, and (4) SITE scales efficiently, matching the runtime and memory cost
+of zero-shot inference while requiring only minimal computation for the one-time construction of
+task embeddings and optimization of soft head-selection parameters.
+
+2 RELATED WORK
+
+2.1 IN-CONTEXT LEARNING IN LARGE LANGUAGE MODELS
+
+In-context learning (ICL) is a paradigm where LLMs perform tasks by conditioning on input-output
+examples in the prompt, without updating model weights. This enables LLMs to leverage their pre-
+trained knowledge to dynamically infer tasks or patterns during inference. Numerous studies
+understand the mechanisms behind the strong ICL capabilities of LLMs. Several of these highlight
+the role of specialized attention heads, such as induction heads (Olsson et al. [2022) or function
+vector heads (Todd et al.| {2023), as critical for task execution. While our work is closely related to
+this perspective, we reconceptualize head attribution as a performance optimization problem, rather
+than merely treating it as an analytical tool for understanding LLM dynamics. This reconceptual-
+ization enabled us to develop a scalable approach that identifies task-relevant attention heads via
+gradient-based optimization over soft head-selection parameters.
+
+2.2 TASK EMBEDDING INJECTION IN LARGE LANGUAGE MODELS
+
+Previous studies have shown that task information is often encoded in the hidden representation of
+the last token in a few-shot ICL prompt, and that injecting this information, typically in the form of a
+task embedding (also known as a task or function vector), can guide LLMs to perform tasks without
+any in-prompt demonstrations (Hendel et al.| 2023} Todd et al. 2023} Huang et al} 2024). FV (Todd
+constructs a task embedding by aggregating activations from a few selected attention
+heads and injects it into the model by adding it to the hidden representation at a fixed layer, typically
+around one-third of the model depth. The attention heads are selected based on their individual
+impact on ICL performance, which is computationally expensive given the large number of heads
+in modern LLMs. In addition, FV’s performance is constrained by the heuristic choice of injection
+location. MTV (Multimodal Task Vectors) 2024), originally developed for vison-
+language models (VLMs) but naturally extensible to LLMs, addresses some of these limitations by
+directly replacing selected head activations with task embeddings, using reinforcement learning to
+optimize the head-sampling distribution. Nevertheless, MTV relies on repeated sampling and hard
+replacement, which may limit both efficiency and flexibility. In contrast, our method introduces a
+soft injection mechanism that blends each head’s original activation with a task embedding using
+learnable interpolation weights. This continuous formulation avoids discrete selection, enables effi-
+cient gradient-based optimization, and allows for head-wise control over how much task information
+is injected—preserving the original activation when helpful and overriding it when necessary.
+
+
+Stage 1: Task Embedding Construction
+
+M
+M &
+N-Shot Prompt ULM
+
+Head Activations for Last Token
+
+Task Embeddings
+
+“
+
+‘Average
+
+(t,t)
+
+Stage 2: Optimization of Soft Head-Selection Parameters
+
+0-Shot Prompt Output Logits
+Cross-Entropy Loss
+v
+ED) lL) 0. Q(b#)
+asl & : Ground Truth
+=| 3 8 8 Next Token
+—> : Forward Pass al) gl) e+ + gibt)
+~~» : Backward Pass Soft Head-Selection Parameters
+Stage 3: Zero-Shot Inference with Task Embedding Injection
+_
+0-Shot Prompt evils
+Sequence
+
+Figure 1: Method Overview. Our method consists of three stages. (1) A set of task embeddings is
+constructed by averaging attention head activations for the last token across few-shot ICL prompts,
+using M=50 prompts each with N=10 input-output pairs. (2) Soft head-selection parameters are
+optimized to determine how the task embeddings should be injected into the model during zero-shot
+inference. (3) At inference time, the set of task embeddings and the learned selection parameters are
+used to guide the model in performing tasks without any in-prompt examples. L and H denote the
+number of attention layers and the number of attention heads per layer, respectively, in the LLM.
+
+3. METHOD
+
+Our method consists of three main stages. (1) First, we construct a set of task embeddings using
+few-shot ICL prompts. (2) Next, we optimize soft head-selection parameters via gradient descent.
+(3) Finally, we apply the pre-computed task embeddings and the learned head-selection parameters
+to the model, enabling it to perform tasks without any in-prompt examples. Figure [I] provides an
+overview of our method.
+
+Task embedding construction. FV (Todd et al.| ) showed that averaging attention head ac-
+tivations for the last token across few-shot ICL prompts, per head, can encode task information.
+MTV 2 adopts the resulting representations as task embeddings, which we also
+use in our method. Let MW denote the number of few-shot ICL prompts, each containing N input-
+output examples, denoted as P;, P2,..., Py. For each prompt P,,, we pass it through the model
+
+and extract attention head outputs at every layer. Specifically, for each layer 1 € {1,2,..., LZ} and
+each head h € {1,2,..., H}, the output of head h at layer / for prompt P,, is given by:
+Lh Qi” ( ae Lh Sim xd
++) — softmax Jae Vib) E RSm xd (1)
+
+where Qh”, KM hy yer) are the query, key, and value matrices, dj is the key/query dimension,
+
+d, is the value/head dimension, and S,,, is the token length of prompt P,,. We then extract the
+activations at the last token and average them across all 1/7 prompts to obtain the final activation for
+each head:
+
+M
+1
+tO) = De th, eR* (2)
+
+m=1
+
+H constitutes the set of task embeddings for the given task.
+
+The set {t) }yoy nat
+
+Optimization of soft head-selection parameters. To reformulate discrete head selection as a
+continuous optimization problem, we introduce a learnable matrix A for each task, where each
+
+entry a") serves as a soft head-selection parameter for attention head h € {1,2,..., H} in layer
+le {1,2,...,D}:
+AED... Q(LH)
+A=] : “ : € (0, 1]°*" (3)
+aGD 1... q(t)
+
+Each a") controls the degree to which task-specific information is injected into the corresponding
+attention head. Let o(/-) € R¢» denote the original activation of head h at layer | for the last token
+in the prompt. We apply soft injection by mixing the original activation with the task embedding
+thn:
+
+0!) (1 = a) ob) 4 lbh) 4G"), (4)
+
+forall? € {1,2,...,L}andh € {1,2,..., H}. During training, the underlying LLM is kept frozen.
+We optimize A over a few gradient descent steps by minimizing the cross-entropy loss on the next-
+token prediction, using output logits from the intervened model. In each iteration, inference is
+performed on a zero-shot prompt, and the set of task embeddings is injected according to the current
+values of A. Each a4) is implemented as the sigmoid of a trainable parameter initialized to zero,
+yielding an initial value of 0.5—corresponding to a neutral starting point with no initial bias toward
+either the original activations or the task embeddings.
+
+Zero-shot inference with task embedding injection After learning the soft head-selection pa-
+rameters A, we use them together with the set of task embeddings {td 5, to guide the LLM
+in performing tasks without any input-output demonstrations in the prompt. The soft injection is
+applied in the same manner as during the optimization stage (Equation|4) but only once-at the last
+token of the initial input prompt—under the assumption that KV cache hoes is enabled
+during autoregressive decoding. No further injection is applied in subsequent decoding steps. This
+one-time injection embeds task-relevant information into the KV cache at the start of generation,
+enabling the model to produce the remaining tokens without additional intervention. If KV cache is
+disabled, the injection must be reapplied at each decoding step to the last token of the initial prompt.
+
+4 EXPERIMENTS
+4.1 EXPERIMENTAL SETUP
+
+Table 1: Models used for evaluation. We consider 12 large language models spanning four model
+families, three variation types, and parameter scales from 4B to 70B.
+
+Model Family | Model Name Variation Type
+Llama-3.1-8B Pretrained (Base)
+Llama-3.1 Llama-3.1-8B-Instruct Instruction-tuned (Chat/Alignment)
+. Llama-3.1-70B Pretrained (Base)
+Llama-3.1-70B-Instruct Instruction-tuned (Chat/Alignment)
+Mistral-7B-v0.3 Pretrained (Base)
+Mistral Mistral-7B-Instruct-v0.3 Instruction-tuned (Chat/Alignment)
+— Mixtral-8x7B-v0.1 Sparse Mixture of Experts (SMoE, Pretrained)
+Mixtral-8x7B-Instruct-v0.1 | Sparse Mixture of Experts (SMoE), Instruction-tuned
+Qwen3 Qwen3-8B Instruction-tuned (Chat/Alignment)
+Qwen3-32B Instruction-tuned (Chat/Alignment)
+G 3 Gemma-3-4B-pt Pretrained (Base)
+emma. Gemma-3-4B-it Instruction-tuned (Chat/Alignment)
+
+Implementation details. For each task, the dataset is split into train, validation, and test sets fol-
+
+lowing the split ratio used in FV (Todd et al.| (2023); only the train and validation sets are used
+to construct task embeddings and optimize the head-selection parameters. Task embeddings are
+
+
+Mmm O-shot| mmm 10-shot mmm SITE (Ours)
+
+35 wa
+
+iS g 2
+& 8 8
+
+Accuracy (%)
+
+x
+8
+
+°
+
+Figure 2: Average performance across 57 ICL tasks for 12 backbone large language models.
+For each backbone model, the performance of our method is presented along with 0-shot and 10-shot
+baselines. Average accuracies are annotated above each bar. Task-wise results for all 57 tasks—across
+our method, 0-shot, and 10-shot-are provided in Table[2|for Llama-3.1-8B, and in Tables[14]24] of
+Appendix|B]for the remaining 11 LLMs.
+
+constructed by averaging head activations from MM = 50 prompts, each containing N = 10 in-
+put—output pairs. We optimize the soft head-selection parameters using a learning rate of 0.2 and
+400 training iterations for all 12 LLMs, without tuning these hyperparameters for individual models.
+The underlying LLM remains frozen throughout training, and only the soft head-selection parame-
+ters are updated using the Adam (Kingmal|2014) optimizer without any regularization. Checkpoints
+are saved based on validation loss, evaluated every 50 iterations. To minimize randomness, we use
+greedy decoding for all models and methods.
+
+Models. In this study, we apply our method to 12 LLMs spanning four model families—Llama
+31 Graaf a0, sal Can a0) Q02-), Qver (ane et a] 202), Gemma
+3 (Team et al.]]2025)-three variation types, and a range of scales from 4B to 70B parameters. The
+complete list of models is provided in Table] For comparison with prior task embedding injection
+methods, FV and MTV 2024), we restrict evaluation to Llama-3.1-8B due to the high
+computational cost of FV. We follow the default configurations provided in the official code and
+papers for both baselines, with one minor adjustment to MTV to match our setting: we use M = 50
+prompts with N = 10 shots each to construct task embeddings, instead of the original 100 prompts
+with 4 shots. Additional implementation details are provided in Appendix[A.1]
+
+Tasks and prompt templates. We evaluate our method on all 57 ICL tasks provided in the official
+code repository of FV, comprising 29 abstractive and 28 extractive tasks. Abstractive tasks require
+the LLM to generate information that is not explicitly present in the prompt, while extractive tasks
+involve retrieving the answer directly from it. For all experiments, we adopt FV’s default ICL
+prompt template: ‘Q:{a1}\nA:{ya}\n\n ... Q:{vin}\nA:{yiw}\n\nQ: {xig}\nA:’,
+where each {x;,} and {y;,} is replaced with the corresponding input-output pair. To assess the
+robustness of our method to prompt formatting, we also evaluate it using four alternative prompt
+templates, with results reported in Table[I3] of Appendix [A.3] Descriptions of all 57 tasks and the
+prompt templates are also provided in Appendix[A]
+
+4.2 EXPERIMENTAL RESULTS
+
+We applied our soft injection method to 12 LLMs and report the average performance across all 57
+ICL tasks in Figure|2| Despite using 0-shot prompts at inference time, our method consistently out-
+performs both 0-shot and 10-shot baselines across all 12 models. It achieves an average performance
+gain of 10.1%-13.9% over the 10-shot baseline, demonstrating its effectiveness and generalizabil-
+ity across various model families, variation types, and sizes. As explained earlier, we intentionally
+avoided hyperparameter tuning for each model and focused on validating the general potential of
+
+our soft injection method. These results suggest that our method, SITE, can serve as a strong al-
+ternative to few-shot in-context learning, eliminating the need for prompt-based demonstrations at
+inference time. For a detailed breakdown, task-wise results for all 57 tasks and 12 LLMs—comparing
+our method with the 0-shot and 10-shot baselines—are provided in Table[2]for Llama-3.1-8B, and in
+
+Tables[I4]24]of Appendix |B] for the remaining 11 LLMs.
+
+We also compare our method with other task embedding injection approaches in Table [2] which
+presents task-wise performance across all 57 ICL tasks, grouped into abstractive and extractive cate-
+gories. For both task types, FV and MTV significantly outperform the 0-shot baselines, demonstrat-
+ing the effectiveness of task embedding injection. However, neither method surpasses the 10-shot
+baseline, which is a fair point of comparison given that their task embeddings are constructed using
+10-shot prompts. In contrast, our method achieves substantially higher performance than the 10-shot
+baseline in both categories. For abstractive tasks, our method achieves either the best or second-best
+performance on all 29 tasks, with an average performance gain of 11.9%. For extractive tasks, it
+achieves the best performance on all 28 tasks, with an average performance gain of 14.8%.
+
+Table 2: Comparison of injection-based methods on 57 ICL tasks using Llama-3.1-8B. Three
+injection methods (FV, MTV, Ours) are evaluated alongside 0-shot and 10-shot baselines. (a) Results
+on 29 abstractive tasks. (b) Results on 28 extractive tasks. The best results are shown in bold, and
+the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+Vanilla 0-shot + Injection Vanilla 0-shot + Injection
+Task Name 0-shot 10-shot FV MTV Ours Task Name 0-shot 10-shot FV MTV Ours
+AG_News 0.4 79.1 0.0 78.4 88.7 — Adjective-V_Verb_3 14.3 87.6 90.5 99.5
+Antonym 0.0 69.6 50.6 64.5 71.2 Adjective_V_Verb_5 91 848 714 98.1
+Capitalize 5.3 99.4 92.9 99.4 100.0 Alphabetically Fir 219 424 34.3 57.1
+Capitalize_First_Letter 10.0 100.0 53.5 99.4 100.0 Alphabetically Fir: 16.7 18.6 25.2. 90.5
+
+29.5 30.5 47.6
+21.9 44.3
+
+Capitalize-Last_Letter 12 24.0 0.0 50.3 93.0 Alphabetically -Last_3 16.2 36.2
+Capitalize Second_Letter 1.2 28.5 0.0 46.7 97.0 Alphabetically_Last_5 10.5 23.3
+
+Commonsense_QA 40.3. 72.3 23.6 60.7 62.7 — Animal.V_Object3 124 795 86.2 99.0
+Country-Capital 48 92.9 35.7 92.9 95.2 Animal_V_Object5 19.1 81.0 B8& 981
+Country-Currency 0.0 78.6 0.0 71.4 81.0 ChooseFirst_Of3 52.9 98.6 99.1 100.0
+English-French 0.5 81.7 2.2 75.6 81.7. Choose_First_Of_5 52.4 97.6 98.6 100.0
+English-German 12 75.5 2.5 63.6 69.3 Choose_Last_Of3 1.0 97.6 92.9 100.0
+English-Spanish 0.2 84.1 2.3 70.0 83.1  Choose_Last_Of_5 3.8 85.7 100.0
+Landmark-Country 0.0 92.6 24.0 85.1 86.9  Choose_Middle_Of3 2.9 47.6 99.0
+Lowercase_First_Letter 0.0 99.4 50.3 99.4 100.0  Choose_Middle_Of_5 43 22.4 90.0
+Lowercase_Last_Letter 0.0 39.8 0.0 53.8 96.5 — Color_V_Animal3 16.7 97.6 99.5
+National Parks 0.0 86.3 46.3 81.1 811 ColorV_Animal_5 15.7 948 99.5
+Next_Capital_Letter 0.6 2.9 0.0 2.3 98.8 — Concept.V_Object_3 143 1 99.5
+Next_Item 2.1 97.9 63.8 95.7 97.9 Concept.V_Object_5 17.6 69.5 93.8
+Park-Country 0.0 89.8 63.7 82.2 84.7 — Conil2003_Location 21.8 89.0 94.3
+Person-Instrument 0.0 83.2 2.8 82.2 87.9 — Conil2003-Organization 39.3. 77.5 70.1 914
+Person-Occupation 0.0 64.5 7.0 73.8 80.8 — Cont12003_Person 124 O17 92.9 97.3
+Person-Sport 0.0 95.5 0.0 94.0 97.0 Eruit-V_Animal.3 23.3 82.9 88.1 99.0
+Present-Past 3.3 100.0 75.4 98.4 100.0 Fruit V_Animal 5 10.0 79.1 71.9 99.5
+Prev_Item 21 97.9 61.7 93.6 97.9 ‘oc 7 6 O76 , "
+Object_V_Concept_3 17.6 97.6 96.2 100.0
+Product-Company 0.0 87.2 11.0 89.9 88.1 Object_V_Concept_5 57 92.4 90.0 98.1
+Sentiment 0.0 95.1 0.0 92.7 96.3
+25.1 Squad_Val 39.4 65.5 86.7
+Singular-Plural 2.3 100.0 86.1 90.7 100.0 yi V Adjective 3 Md 801 976
+Synonym 18 50.3 21.7 449 53.0 Vath V Adjective 5 19 85.2 99.0
+Word_Length 0.0 386 0.0 263 825 Sun’ “elective. : oo
+Average 27 16.1 268 744 88.0 Average 17.3773 BS 92-1
+
+5 ANALYSIS OF TASK-RELEVANT ATTENTION HEADS THROUGH SITE
+
+Attention head attribution, a branch of mechanistic interpretability research, investigates the func-
+tional roles of attention heads in LLMs
+Wu et al In this section, we show that although SITE was not explicitly designed for at-
+tributional ysis, it not only identifies task-relevant attention heads but also provides a clearer
+explanation of what it means for a head to be task-relevant. In Sectio we show that the learned
+
+
+AG_News Person-Instrument Choose _Middle_Of 5
+
+0 200 400 600 800 1000 0 200 400 600 800 1000 0 200 400 600 800 1000
+
+Soft Head-Selection Value
+
+—— Optimized Values ---- Initial Value (0.5)
+
+Figure 3: Optimized values of soft head-selection parameters for three ICL tasks. Each plot
+shows the optimized soft head-selection values for all 1024 attention heads in Llama-3.1-8B, sorted
+in descending order. Dashed lines indicate the initial value of 0.5 assigned to all selection parameters
+at the start of training. Results for all 57 tasks are provided in Figures|6[8]of Appendix|C.1]
+
+soft head-selection parameters tend to converge toward binary values, effectively identifying task-
+relevant attention heads. In Section|5.2} we compare task-specific and task-agnostic perspectives
+and find that the task-relevant roles of attention heads are better explained from the task-specific
+viewpoint. Although the analyses in this section are based on Llama-3.1-8B, we also observed that
+the findings generalize to other models listed in Table[]]
+
+5.1 IDENTIFICATION OF TASK-RELEVANT ATTENTION HEADS
+
+Figure [3] shows the optimized values of the soft head-selection parameters for all 1024 attention
+heads in Llama-3.1-8B, sorted in descending order. Results are presented for three selected ICL
+tasks, with the dashed horizontal lines indicating the initial value of 0.5 assigned to all parameters
+at the start of training. Although the Adam optimizer without regularization does not explicitly en-
+courage extreme values, we observe that approximately 80-90% of the parameters almost converge
+to either 0 or | across all tasks. This pattern likely arises from two factors: (1) each parameter is
+the sigmoid of a trainable scalar, smoothly mapping values to [0, 1]; and (2) consistent benefits from
+injecting—or not injecting—into specific heads lead gradient descent to push the parameters toward
+extremes. A similar pattern is observed across all 57 tasks (see Appendix[C.1p.
+
+To accurately assess whether heads with optimized values near | are task-relevant, we evaluate hard
+injection by thresholding the soft head-selection parameters at 0.5 and using the resulting binary
+values (1 or 0) to inject task embeddings during inference. Hard injection yields an average accuracy
+of 88.9% across the 57 tasks, slightly below the 90.0% achieved by our soft injection approach (task-
+wise results for all 57 tasks are provided in Table [25] of Appendix This result reveals two key
+insights: (1) the learned soft head-selection parameters effectively identifies task-relevant attention
+heads; and (2) the 10-20% of heads with intermediate values between 0 and 1 also contribute to task
+performance in some cases, accounting for 1.1% of the average performance drop.
+
+5.2 TASK-SPECIFIC VS. TASK-AGNOSTIC: WHICH BETTER EXPLAINS HEAD ROLES?
+
+Our experiments show that our method effectively identifies task-relevant attention heads in LLMs,
+yielding substantial gains without in-prompt demonstrations. However, an important question re-
+mains: What does it truly mean for an attention head to be ‘task-relevant’? Specifically, do heads
+selected for one task generalize across a broad range of tasks, or only to those with similar charac-
+teristics? Prior work has primarily explored task-agnostic heads—those that generalize well across
+a broad range of tasks—which supports interpretability but often underperforms in practice (O.
+2024). In contrast, recent approaches such as
+employ task-specific heads to improve performance, but offer limited in-
+sight into how broadly these heads generalize. As a result, the field still lacks a clear understanding
+of whether task-specific or task-agnostic perspectives more accurately reflect the functional roles of
+attention heads. To address this gap, we conduct two analyses: (1) a cross-task analysis, which tests
+generalization by applying soft head-selection parameters derived from one task to another (chang-
+ing only where task information is injected), and (2) a task-agnostic analysis, which evaluates per-
+formance using a single, shared set of head-selection parameters trained across all 57 tasks.
+
+Cross-task analysis. We define the evaluation task as the task being solved (i.e., the task that
+provides the input query), and the injection task as the one from which the soft head-selection
+
+Table 3: Cross-task analysis for seven evaluation tasks. For each evaluation task, soft head-
+selection parameters are swapped with those from other tasks—changing where task information is
+injected, but not what is injected. The table reports the top-3 and bottom-3 injection tasks based on
+accuracy, with task names and corresponding scores shown. More results are provided in Table 26]
+
+of Appendix P}
+
+Evaluation Task
+
+Task Description
+
+| Top-3 Injection Tasks (Acc %) | Bottom-3 Injection Tasks (Acc %)
+
+Adjective_V_Verb_S
+
+Select the adjective
+from a list of 5 words
+(1 adjective, 4 verbs)
+
+Adjective.V_Verb_5 (98.1)
+Adjective_V_Verb_3 (96.7)
+Animal_V_Object_5 (78.6)
+
+Verb_V_Adjective_3 (1.4)
+Verb_V_Adjective_5 (4.8)
+English-French (5.7)
+
+Verb_V _Adjective_S
+
+Select the verb
+from a list of 5 words
+(1 verb, 4 adjectives)
+
+Verb_V_Adjective_5 (99.0)
+Verb_V_Adjective_3 (99.0)
+Color_V_Animal_5 (81.4)
+
+Adjective_V_Verb_3 (1.0)
+Antonym (7.6)
+Adjective_V_Verb_5 (9.5)
+
+Alphabetically _First_5
+
+Select the word that comes
+first in alphabetical order
+from a list of 5 words
+
+Alphabetically_First_5 (90.5)
+Alphabetically_First_3 (43.8)
+Commonsense_QA (29.5)
+
+Alphabetically_Last_5 (5.7)
+Alphabetically-Last_3 (8.1)
+Park-Country (10.5)
+
+Alphabetically_Last_5
+
+Select the word that comes
+last in alphabetical order
+from a list of 5 words
+
+Alphabetically-Last_5 (44.3)
+Alphabetically_Last_3 (40.5)
+Commonsense_QA (25.7)
+
+Alphabetically _First_S (0.0)
+Alphabetically _First_3 (8.6)
+English-German (12.9)
+
+English-French (81.7)
+English-German (80.3)
+English-Spanish (80.0)
+
+English-French (71.4)
+English-German (69.3)
+English-Spanish (68.3)
+English-French (84.4)
+English-Spanish (83.1)
+English-German (82.1)
+
+Person-Occupation (19.4)
+Person-Instrument (34.0)
+Next_Capital_Letter (38.9)
+
+Person-Occupation (3.4)
+Prev_Item (23.6)
+Next_Capital_Letter (26.2)
+
+Person-Instrument (39.1)
+Person-Occupation (39.7)
+Next_Capital_Letter (40.8)
+
+Translate the given
+
+English-French English word into French
+
+Translate the given
+
+English-German English word into German
+
+Translate the given
+
+English-Spanish English word into Spanish
+
+parameters are derived. For a given evaluation task, we use its own task embedding but apply head-
+selection parameters optimized for a different injection task, varying the injection task across all 57
+ICL tasks. This setup keeps the injected content fixed while changing only the injection locations.
+Table [3] presents cross-task results for seven evaluation tasks, along with brief task descriptions to
+aid interpretation. For each evaluation task, we evaluate performance using head-selection parame-
+ters from all 57 injection tasks and report the top-3 and bottom-3 injection tasks based on accuracy.
+Notably, for the evaluation task Adjective_V_Verb_S, the top-3 injection tasks include semantically
+similar tasks such as Adjective_V_Verb_5, Adjective_V_Verb_3, while the bottom-3 include semanti-
+cally dissimilar tasks such as Verb_V_Adjective_3, Verb_V_Adjective_S. Similar trends are observed
+for Verb_V_Adjective_5, Alphabetically_First_S, and Alphabetically_Last_S. For translation tasks—
+English-French, English-German, English-Spanish—the top and bottom injection tasks are largely
+consistent across the board. Interestingly, for these translation tasks, the performance using cross-
+task head-selection parameters closely matches or even exceeds that of using their own, suggesting
+that injection locations are transferable across related translation tasks.
+
+Task-agnostic head-selection analysis. To
+derive task-agnostic soft head-selection param-
+eters, we optimize them across all 57 tasks
+by randomly sampling a task at each training
+iteration. During this process, we use task-
+specific task embeddings (i.e., what to inject)
+while sharing a single set of task-agnostic head-
+selection parameters (i.e., where to inject). To
+ensure convergence, we increase the number
+of training iterations from 400 to 1000. Ta-
+presents the results along with O-shot and
+10-shot baselines, as well as our method using
+
+Table 4: Comparison of task-specific vs. task-
+agnostic head-selection on 57 ICL tasks. Aver-
+age accuracy is shown for 29 abstractive, 28 ex-
+tractive, and all 57 tasks. Results include 0-shot
+and 10-shot baselines, and our method with task-
+specific and task-agnostic head-selection.
+
+Task Type 0-shot 10-shot Ours Ours (Task-Agnostic)
+Abstractive 2.7 76.1 88.0 73.4
+Extractive 17.35 77.3 92.1 TIA
+All (57 tasks) 9.9 76.7 90.0 75.3
+
+task-specific head-selection parameters. We observe a substantial drop in performance when using
+task-agnostic head-selection parameters. This result is consistent with the cross-task analysis in Ta-
+ble B} where performance significantly degraded when head-selection parameters were taken from
+semantically dissimilar tasks. Together, these results support the view that task-specific perspec-
+
+AG_News Person-Instrument Choose_Middle_Of_5
+
+5 0.90 1.50
+a 1.25
+3 0.85
+§
+= 1.00
+§
+3 0:89 9.75,
+z
+3 0.75 0.50
+0 100 200 300 400 100 200 300 0 100 200 300
+Training Iteration Training Iteration Training Iteration
+—e— Ours - Validation Loss © —=~ Ours-Test Accuracy ----_ 10-shot Baseline - Test Accuracy
+
+Figure 4: Training dynamics of soft head-selection parameters for three ICL tasks. Validation
+loss (left y-axis) and test accuracy (right y-axis) are plotted over 400 training iterations for AG_News,
+Person-Instrument, and Choose_Middle_Of_5. Dashed lines indicate the 10-shot baseline accuracies
+for reference. Plots for all 57 tasks are provided in Figures[I2]14)of Appendix
+
+AG_News Person-Instrument Capitalize_Last_Letter
+
+——— a
+
+0.75
+
+0.50 0.50
+0.25 0.25 fe AN te
+A
+oot 0.00 0.00
+
+04815 25 35 45 60 80 100 04815 25 35 45 60 80 100 04815 25 35 45 60 80 100
+Choose_Middle_Of_5 izati Alphabetically Last_5
+
+0.6
+
+0.4
+
+ed
+
+ee
+0.25 fms | 0.24 eyelet tte tN
+{ oatt q
+0.00 :
+04815°25°35'45. 60 | 80 | 100 04615 °25°35.45° 60 | 80 | 100 04615 25°35 45° 60 | 80 | 100
+Number of Shots (N) Number of Shots (N) Number of Shots (N)
+
+—=— Ours (Task Embeddings w/ N-shot Prompts) | —*— N-shot Baseline Accuracy
+
+Figure 5: Impact of shot count on task performance for six ICL tasks. The plots show the
+performance of the V-shot baseline as the shot count (V) increases from 0 to 100. For comparison,
+our method is also evaluated using different values of NV for task embedding construction (default:
+N=10), while keeping 1/=50 fixed.
+
+tives better capture the functional roles of attention heads, while task-agnostic approaches obscure
+important task-dependent behaviors.
+
+6 EMPIRICAL FINDINGS AND EFFICIENCY ANALYSIS
+In this section, we provide four additional analysis results, all based on Llama-3.1-8B.
+
+Training dynamics of head selection. In Figure [4] we plot the validation loss and test accuracy
+of our method during the optimization of soft head-selection parameters. The figure shows train-
+ing dynamics for three selected tasks, with the 10-shot baseline accuracies included for reference.
+While the training dynamics vary slightly across tasks, the overall trends are consistent: (1) At the
+beginning of training, head injection already yields relatively high accuracy compared to the 0-shot
+results in Table|2| This is because all soft head-selection parameters are initialized to 0.5, meaning
+the task embedding is equally mixed with the original head activation across all attention heads (see
+Equation|4). (2) As training progresses, validation loss decreases and test accuracy improves, indi-
+cating that gradient descent effectively tunes the selection parameters to identify meaningful head
+positions for injecting task-relevant information. The full set of training curves for all 57 tasks is
+provided in Appendix(E. 1] and some selected results for larger models are included in Appendix|E.2|
+
+Impact of shot count on task performance. Increasing the number of in-prompt examples (or
+shots) is a common strategy for improving few-shot ICL performance. While some studies
+(2024) report further gains as the number of shots increases from a few to many, oth-
+ers (Zhang et al.| observe that ICL performance plateaus after only a few examples. A plau-
+
+sible explanation-also suggested by recent work (Zou et al.||2024)-is that the benefit of additional
+shots varies across tasks. To investigate this, we analyze whether increasing the shot count in the
+N-shot baseline can close the performance gap with our method. Figure [5] presents results for
+six selected tasks, with our method also evaluated using varying values of N for task embedding
+construction. For AG_News, Person-Instrument, and Conl12003_Organization, V-shot baseline per-
+formance improves as JN increase, eventually matching ours at 100 shots. In contrast, tasks such as
+Capitalize_Last_Letter, Choose_Middle_Of_5, and Alphabetically _Last_5 show limited performance
+gains even with many-shot prompting. This suggests that increasing the number of shots from
+a few to many is not always effective, particularly given the additional time and memory costs.
+Interestingly, our method reaches peak performance with as few as N = 2 for most tasks, with
+Alphabetically _Last_5 being a notable exception where larger N yields further improvement.
+
+Robustness to prompt count in task embedding construction. We construct task embeddings by
+averaging representations from MM = 50 ICL prompts, each containing N = 10 input-output pairs.
+To assess the impact of the prompt count V in task embedding construction, we conduct an ablation
+study by varying M while keeping N = 10 fixed. As shown in Table |5} even a single 10-shot
+prompt (JZ = 1) achieves strong performance, outperforming the vanilla 10-shot baseline by 12.0%.
+Performance saturates beyond M = 5, closely matching that of our default setting (JZ = 50). These
+results suggest that the effectiveness of our method stems not from aggregating many demonstrations
+into the task embeddings, but from identifying effective soft head-selection parameters for each task.
+
+Table 5: Ablation of prompt count // used in task embedding construction. Average accuracy
+is reported for 29 abstractive, 28 extractive, and all 57 tasks. We ablate our method by constructing
+task embeddings using 10-shot prompts (NV = 10), varying M across {1, 3, 5, 10, 50}.
+
+Task Type 0-shot 10-shot Ours (\/=1) Ours (\/=3) Ours (\/=5) Ours (\/=10) Ours (/=50, default)
+Abstractive (29 tasks) 2.7 76.1 86.5 87.1 87.4 87.2 88.0
+Extractive (28 tasks) 17.3 773 91.0 917 92.1 92.3 92.1
+All (57 tasks) 9.9 76.7 88.7 89.4 89.7 89.7 90.0
+
+Computational efficiency. To evaluate the
+efficiency of our method, Table [6] reports the
+total runtime as the number of test prompts in-
+creases. Since both the task embedding and soft
+head-selection parameters are computed only
+once (Stages | and 2 of our method) and reused,
+their cost does not grow with the number of test
+
+Table 6: Runtime comparison as the number
+of test prompts increases. Total runtime (in
+minutes) is reported for 1000, 5000, and 10000
+prompts on AG_News using Llama-3.1-8B. Our
+method scales efficiently as the number of test
+prompts increases. All runtimes were measured
+on a single NVIDIA A6000 GPU.
+
+prompts. This allows our method to scale ef-
+
+ficiently, maintaining total runtime close to the # Test Prompts 0-shot 10-shot. FV MTV Ours
+0-shot baseline and substantially lower than the 1000 157. 248 2698 41.9 220
+10-shot baseline. In contrast, FV incurs signifi- 5000 78.3 124.2 332.7 169.4 88.6
+cant overhead from task embedding construc- 10000 156.7 2484 411.2 328.8 172.0
+
+tion, while MTV is slowed by a suboptimal
+loop structure in its original codebase; even with code-level optimization, its runtime would re-
+main slightly higher than ours. Our method is also lightweight at inference, requiring only 0.5 MB
+in float32 precision to store the task embeddings and head-selection parameters in Llama-3.1-8B.
+Overall, our approach achieves strong performance gains over few-shot ICL while maintaining the
+time and memory efficiency of 0-shot inference, particularly as the number of test prompts increases.
+
+7 CONCLUSION
+
+This paper presents SITE (Soft Injection of Task Embeddings), which softly mixes pre-computed
+task embeddings with attention head activations using pre-optimized soft head-selection parame-
+ters. An extensive evaluation across 57 tasks and 12 LLMs demonstrate that SITE significantly
+outperforms 10-shot ICL, without requiring any in-prompt demonstrations during inference. Fur-
+ther analyses show that SITE also serves as a valuable tool for analyzing task-relevant attention
+heads. Overall, SITE offers a scalable and effective alternative to prompt-based ICL, with broad
+potential for both practical applications and interpretability research in LLMs.
+
+10
+
+REFERENCES
+
+Rishabh Agarwal, Avi Singh, Lei Zhang, Bernd Bohnet, Luis Rosias, Stephanie Chan, Biao Zhang,
+Ankesh Anand, Zaheer Abbas, Azade Nova, et al. Many-shot in-context learning. Advances in
+Neural Information Processing Systems, 37:76930-76966, 2024.
+
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal,
+Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are
+few-shot learners. Advances in neural information processing systems, 33:1877-1901, 2020.
+
+Alexis Conneau, Guillaume Lample, Marc’ Aurelio Ranzato, Ludovic Denoyer, and Hervé Jégou.
+Word translation without parallel data. arXiv preprint arXiv: 1710.04087, 2017.
+
+Qingxiu Dong, Lei Li, Damai Dai, Ce Zheng, Jingyuan Ma, Rui Li, Heming Xia, Jingjing Xu,
+Zhiyong Wu, Tianyu Liu, et al. A survey on in-context learning. arXiv preprint arXiv:2301.00234,
+2022.
+
+Fabian Falck, Ziyu Wang, and Chris Holmes. Is in-context learning in large language models
+bayesian? a martingale perspective. arXiv preprint arXiv:2406.00793, 2024.
+
+Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad
+Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. The llama 3 herd
+of models. arXiv preprint arXiv:2407.21783, 2024.
+
+Roee Hendel, Mor Geva, and Amir Globerson. In-context learning creates task vectors. arXiv
+preprint arXiv:2310.15916, 2023.
+
+Evan Hernandez, Arnab Sen Sharma, Tal Haklay, Kevin Meng, Martin Wattenberg, Jacob Andreas,
+Yonatan Belinkov, and David Bau. Linearity of relation decoding in transformer language models.
+In The Twelfth International Conference on Learning Representations.
+
+Or Honovich, Uri Shaham, Samuel R Bowman, and Omer Levy. Instruction induction: From few
+examples to natural language task descriptions. arXiv preprint arXiv:2205.10782, 2022.
+
+Brandon Huang, Chancharik Mitra, Leonid Karlinsky, Assaf Arbelle, Trevor Darrell, and Roei
+Herzig. Multimodal task vectors enable many-shot multimodal in-context learning. Advances
+in Neural Information Processing Systems, 37:22124—22153, 2024.
+
+Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chap-
+lot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier,
+Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas
+Wang, Timothée Lacroix, and William El Sayed. Mistral 7b. arXiv preprint arXiv:2310.06825,
+2023.
+
+Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bam-
+ford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al.
+Mixtral of experts. arXiv preprint arXiv:2401.04088, 2024.
+
+Diederik P Kingma. Adam: A method for stochastic optimization. arXiv preprint arXiv: 1412.6980,
+2014.
+
+Hanxiao Liu, Karen Simonyan, and Yiming Yang. Darts: Differentiable architecture search. arXiv
+preprint arXiv: 1806.09055, 2018.
+
+Sewon Min, Xinxi Lyu, Ari Holtzman, Mikel Artetxe, Mike Lewis, Hannaneh Hajishirzi, and Luke
+Zettlemoyer. Rethinking the role of demonstrations: What makes in-context learning work? arXiv
+preprint arXiv:2202. 12837, 2022.
+
+Kim Anh Nguyen, Sabine Schulte im Walde, and Ngoc Thang Vu. Distinguishing antonyms and
+synonyms in a pattern-based neural network. arXiv preprint arXiv: 1701.02962, 2017.
+
+Catherine Olsson, Nelson Elhage, Neel Nanda, Nicholas Joseph, Nova DasSarma, Tom Henighan,
+Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, et al. In-context learning and induction
+heads. arXiv preprint arXiv:2209.11895, 2022.
+
+11
+
+Reiner Pope, Sholto Douglas, Aakanksha Chowdhery, Jacob Devlin, James Bradbury, Jonathan
+Heek, Kefan Xiao, Shivani Agrawal, and Jeff Dean. Efficiently scaling transformer inference.
+Proceedings of Machine Learning and Systems, 5:606-624, 2023.
+
+Erik F Sang and Fien De Meulder. Introduction to the conll-2003 shared task: Language-
+independent named entity recognition. arXiv preprint cs/0306050, 2003.
+
+Aaditya K Singh, Ted Moskovitz, Felix Hill, Stephanie CY Chan, and Andrew M Saxe. What needs
+to go right for an induction head? a mechanistic study of in-context learning circuits and their
+formation. arXiv preprint arXiv:2404.07129, 2024.
+
+Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D Manning, Andrew Y Ng,
+and Christopher Potts. Recursive deep models for semantic compositionality over a sentiment
+treebank. In Proceedings of the 2013 conference on empirical methods in natural language pro-
+cessing, pp. 1631-1642, 2013.
+
+Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. Commonsenseqa: A question
+answering challenge targeting commonsense knowledge. arXiv preprint arXiv: 1811.00937, 2018.
+
+Gemma Team, Aishwarya Kamath, Johan Ferret, Shreya Pathak, Nino Vieillard, Ramona Merhej,
+Sarah Perrin, Tatiana Matejovicova, Alexandre Ramé, Morgane Riviére, et al. Gemma 3 technical
+report. arXiv preprint arXiv:2503.19786, 2025.
+
+Eric Todd, Millicent L Li, Arnab Sen Sharma, Aaron Mueller, Byron C Wallace, and David Bau.
+Function vectors in large language models. arXiv preprint arXiv:2310.15213, 2023.
+
+Noam Wies, Yoav Levine, and Amnon Shashua. The learnability of in-context learning. Advances
+in Neural Information Processing Systems, 36:36637—3665 1, 2023.
+
+Wenhao Wu, Yizhong Wang, Guangxuan Xiao, Hao Peng, and Yao Fu. Retrieval head mechanisti-
+cally explains long-context factuality. arXiv preprint arXiv:2404.15574, 2024.
+
+Sang Michael Xie, Aditi Raghunathan, Percy Liang, and Tengyu Ma. An explanation of in-context
+learning as implicit bayesian inference. arXiv preprint arXiv:2111.02080, 2021.
+
+An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu,
+Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint
+arXiv:2505.09388, 2025.
+
+Xi Ye, Srinivasan lyer, Asli Celikyilmaz, Ves Stoyanov, Greg Durrett, and Ramakanth Pasunuru.
+Complementary explanations for effective in-context learning. arXiv preprint arXiv:2211.13892,
+2022.
+
+Xiang Zhang, Junbo Zhao, and Yann LeCun. Character-level convolutional networks for text clas-
+sification. Advances in neural information processing systems, 28, 2015.
+
+Xiaoqing Zhang, Ang Lv, Yuhan Liu, Flood Sung, Wei Liu, Jian Luan, Shuo Shang, Xiuying Chen,
+and Rui Yan. More is not always better? enhancing many-shot in-context learning with differen-
+tiated and reweighting objectives. arXiv preprint arXiv:2501.04070, 2025.
+
+Zhenhong Zhou, Haiyang Yu, Xinghua Zhang, Rongwu Xu, Fei Huang, Kun Wang, Yang Liu,
+Junfeng Fang, and Yongbin Li. On the role of attention heads in large language model safety.
+arXiv preprint arXiv:2410.13708, 2024.
+
+Barret Zoph and Quoc V Le. Neural architecture search with reinforcement learning. arXiv preprint
+arXiv: 1611.01578, 2016.
+
+Kaijian Zou, Muhammad Khalifa, and Lu Wang. Retrieval or global context understanding? on
+
+many-shot in-context learning for long-context evaluation. arXiv preprint arXiv:2411.07130,
+2024.
+
+12
+
+CONTENTS
+
+[A Additional experimental setup|
+
+A.1 Implementation details for FV, MTV, and SITE]... 2... ..02202..0...0020.
+
+A.2 Task descriptions for all 57 ICL tasks
+
+A.3 Ablation study on prompt templates
+
+IB Task-wise performance across 11 additional LLMs
+
+ee
+Loe
+bebe eee eee ee
+
+ID Additional results on cross-task analysis|
+
+IE Extended results on head-selection training dynamics|
+
+E.1 Full results for all 57 tasks]... ..
+
+E.2 Results with larger language models
+
+13
+
+14
+14
+14
+19
+
+19
+
+31
+31
+34
+35
+
+36
+
+A ADDITIONAL EXPERIMENTAL SETUP
+
+A.1 IMPLEMENTATION DETAILS FOR FV, MTV, AND SITE
+
+As described in Section we follow the default configurations provided in the official code and
+papers for both FV (Todd et al.|{2023) and MTV . For FV, we adopt the hy-
+perparameter settings specified for Llama-2-7B in the official repository and apply them to our
+experiments on Llama-3.1-8B, as both models share the same number of attention layers and atten-
+tion heads per layer. For MTV, we train the head-sampling distribution on the full training dataset
+for 100 iterations. After training, we independently sample 10 candidate head configurations and
+evaluate each on up to 100 validation examples, selecting the best-performing set. To avoid ex-
+cessive runtime, we cap the number of validation examples at 100-an increase from the 50 used in
+MTV’s original repository. We adopt the same cap in our method’s implementation, where we select
+checkpoints during training based on validation loss computed from up to 100 validation samples.
+
+A.2 TASK DESCRIPTIONS FOR ALL 57 ICL TASKS
+
+We evaluate our method on all 57 ICL tasks provided in the official repository of FV (
+comprising 29 abstractive and 28 extractive tasks (see Table [2] of Section
+of these tasks originate from prior work but were filtered or reformatted by FV, includ-
+
+S
+
+7), Landmark-Country
+
+I,
+Occupation (Hernandez et al.), Person-
+.), Sentiment (Socher et al.|!2013
+
+, Conll2003 Organization (Sang
+
+were constructed by FV. For completeness and clarity, we present task descriptions and input-output
+examples for all 57 tasks in Tables
+
+Table 7: Task descriptions and input-output examples for 57 ICL tasks (part 1 of 5). This table
+provides task names, descriptions, and representative input-output examples for the ICL tasks used
+in our experiments. The remaining tasks are provided in Tables
+
+Task Name Task Description
+
+Input-Output Example
+
+Classify a news article based on its headline and opening sentences into one of:
+
+AG_News World, Sports, Business, or Science/Technology.
+
+Input: Surviving Biotech’s Downturns Charly Travers offers advice on
+withstanding the volatility of the biotech sector.
+Output: Business
+
+Generate the antonym of a given word.
+Antonym y 8
+
+Input: overnight
+Output: daytime
+
+Capitalize Capitalize the given word.
+
+Input: without
+Output: Without
+
+Generate the first letter of a given word in capital form.
+
+Capitalize_First_Letter
+
+Input: deliver
+Output: D
+
+Generate the last letter of a given word in capital form.
+
+Capitalize_Last_Letter
+
+Input: clean
+Output: N
+
+Generate the second letter of a given word in capital form.
+
+Capitalize_Second_Letter
+Input: amazing
+Output: M
+
+14
+
+Table 8: Task descriptions and input-output examples for 57 ICL tasks (part 2 of 5). This
+table continues from Table|7} providing task names, descriptions, and representative input-output
+examples for the ICL tasks used in our experiments. The remaining tasks are provided in Tables 9}
+
+Task Name Task Description
+
+Input-Output Example
+
+Select the most plausible answer to a commonsense question from five given options.
+
+Commonsense_QA
+Input: Sammy wanted to go to where the people were. Where might he go?
+
+a: race track b: populated areas c: the desert d: apartment e: roadblock
+Output: b
+
+Country-Capital Generate the capital city of a given country.
+
+Input: United States of America
+Output: Washington, D.C.
+
+Country-Currency Generate the currency used in a given country.
+
+Input: Singapore
+Output: Singapore Dollar (SGD)
+
+Translate the given English word into French.
+
+English-French
+
+Input: know
+Output: savoir
+
+Translate the given English word into German.
+
+English-German
+Input: drink
+Output: trinken
+
+English-Spanish Translate the given English word into Spanish.
+
+Input: sometimes
+Output: a veces
+
+Landmark-Country Generate the country of a given landmark.
+
+Input: South East Forests National Park
+Output: Australia
+
+Generate the first letter of a given word in lowercase.
+
+Input: CLEVER
+Output: c
+
+Lowercase_First_Letter
+
+Generate the last letter of a given word in lowercase.
+
+Input: PILLOW
+Output: w
+
+Lowercase _Last_Letter
+
+National Parks Generate the U.S. state of a given national park unit.
+
+Input: Glacier Bay National Park
+Output: Alaska
+
+Generate the next capital letter of the first letter in a given word.
+
+Next_Capital_Letter
+Input: microphone
+Output: N
+
+Generate the next item in a known sequence (e.g., days, months, letters, or numbers).
+
+Next_Item
+
+Input: Friday
+Output: Saturday
+
+a gi ati ark.
+Park-Country Generate the country of a given national park.
+
+Input: Dartmoor National Park
+Output: United Kingdom
+
+Generate the musical instrument played by a given musician.
+
+Input: Andor Toth
+Output: violin
+
+Person-Instrument
+
+Person-Occupation Generate the occupation of a given individual.
+
+Input: Li Yining
+Output: economist
+
+15
+
+Table 9: Task descriptions and input-output examples for 57 ICL tasks (part 3 of 5). This
+table continues from Tables[7[8} providing task names, descriptions, and representative input-output
+examples for the ICL tasks used in our experiments. The remaining tasks are provided in Tables
+
+Task Name Task Description
+
+Input-Output Example
+
+Person-Sport Generate the sport played by a given athlete.
+
+Input: Andrea Pirlo
+Output: soccer
+
+Generate the past-tense form of a given present-tense verb.
+Present-Past
+
+Input: write
+Output: wrote
+
+Prev_Item Generate the previous item in a known sequence (e.g., days, months, letters, or numbers).
+
+Input: april
+Output: march
+
+Generate the company associated with a given commercial product.
+
+Product-Company
+Input: Wii Balance Board
+Output: Nintendo
+
+. Generate the sentiment of a given movie review.
+Sentiment
+
+Input: Very well-written and very well-acted.
+Output: positive
+
+Generate the plural form of a given singular noun.
+
+Input: island
+Output: islands
+
+Singular-Plural
+
+Generate the synonym of a given word.
+
+Synonym
+Input: identify
+Output: recognize
+
+Generate the number of letters in a given word.
+
+Word_Length
+Input: discuss
+Output: 7
+
+Adjective V_Verb3 Select the adjective from a list of 3 words (1 adjective, 2 verbs).
+
+Input: prepare, faithful, develop
+Output: faithful
+
+Adjective V_Verb_5 Select the adjective from a list of 5 words (1 adjective, 4 verbs).
+
+Input: remember, teach, knowledgeable, doubt, write
+Output: knowledgeable
+
+Alphabetically First 3 Select the word that comes first in alphabetical order from a list of 3 words.
+
+Input: grapefruit, thoughtful, diligent
+Output: diligent
+
+Alphabetically First_5 Select the word that comes first in alphabetical order from a list of 5 words.
+
+Input: test, prepare, hammer, beyond, pigeon
+Output: beyond
+
+Select the word that comes I.
+
+Alphabetically Last_3 t in alphabetical order from a list of 3 words.
+
+Input: sample, garlic, cream
+Output: sample
+
+Alphabetically _Last_5 Select the word that comes last in alphabetical order from a list of 5 words.
+
+Input: about, navy, gentle, duster, green
+Output: navy
+
+Animal_V Object 3 Select the animal from a list of 3 words (1 animal, 2 non-animals).
+
+Input: lettuce, basketball, dog
+Output: dog
+
+16
+
+Table 10: Task descriptions and input-output examples for 57 ICL tasks (part 4 of 5). This
+table continues from Tables|7]9]} providing task names, descriptions, and representative input-output
+examples for the ICL tasks used in our experiments. The remaining tasks are provided in TablefIT]
+
+Task Name Task Description
+
+Input-Output Example
+
+Animal_V_Object-5 Select the animal from a list of 5 words (1 animal, 4 non-animals).
+
+Input: soda, rice, potato, snorkel, sloth
+Output: sloth
+
+Choose.First.Of 3 Select the first word from a list of 3 words.
+
+Input: ostrich, since, out
+Output: ostrich
+
+Choose First.Of.5 Select the first word from a list of 5 words.
+
+Input: reach, puzzle, passionate, silver, complete
+Output: reach
+
+Choose_Last_Of 3 Select the last word from a list of 3 words.
+
+Input: salmon, rice, socks
+Output: socks
+
+Choose_Last.Of 5 Select the last word from a list of 5 words.
+
+Input: spicy, cowardly, hoop, komodo, toward
+Output: toward
+
+Choose Middle_Of 3 Select the middle word from a list of 3 words.
+
+Input: garlic, candle, argue
+Output: candle
+
+Choose. Middle_Of 5 Select the middle word from a list of 5 words.
+
+Input: table, qualify, airplane, harmonious, happy
+Output: airplane
+
+Color_V_Animal 3 Select the color from a list of 3 words (1 color, 2 animals).
+
+Input: camel, penguin, brown
+Output: brown
+
+Color_V_Animal_5 Select the color from a list of 5 words (1 color, 4 animals).
+
+Input: salamander, chinchilla, flamingo, black, tiger
+Output: black
+
+Select the concept from a list of 3 words (1 abstract concept, 2 concrete entities).
+
+Concept_V_Object_3
+
+Input: radio, whimsical, robot
+Output: whimsical
+
+Concept. V Object 5 Select the concept from a list of 5 words (1 abstract concept, 4 concrete entities).
+
+Input: towel, map, hammock, read, blanket
+Output: read
+
+Conll2003_Location Select the location entity from a given sentence.
+
+Input: Clinton arrives in Chicago on day of re-nomination.
+Output: Chicago
+
+Select the organization entity from a given sentence.
+
+Conll2003_Organization
+Input: Advertising revenues at The Times grew 20 percent.
+Output: The Times
+
+Select the person entity from a given sentence.
+
+Input: They contained $ 650,000 in jewelry and $ 40,000 in cash, Andrews said.
+Output: Andrews
+
+Conll2003_Person
+
+Fruit-V_Animal 3 Select the fruit from a list of 3 words (1 fruit, 2 animals).
+
+Input: pineapple, iguana, leopard
+Output: pineapple
+
+17
+
+Table 11: Task descriptions and input-output examples for 57 ICL tasks (part 5 of 5). This
+table concludes the series from Tables providing task names, descriptions, and representative
+input-output examples for the ICL tasks used in our experiments.
+
+Task Name
+
+Task Description
+
+Input-Output Example
+
+Fruit_V_Animal_5
+
+Select the fruit from a list of 5 words (1 fruit, 4 animals).
+
+Input: walrus, lizard, panther, lion, cranberry
+Output: cranberry
+
+Object_V_Concept_3
+
+Select the concrete entity from a list of 3 words (1 concrete entity, 2 abstract concepts).
+
+Input: need, lamp, beneath
+Output: lamp
+
+Object_V_Concept_5
+
+Select the concrete entity from a list of 5 words (1 concrete entity, 4 abstract concepts).
+
+Input: passionate, jigsaw, remove, expensive, fearless
+Output: jigsaw
+
+Squad_Val
+
+Retrieve the answer to a given question based on a provided context paragraph.
+
+Input: The Panthers offense, which led the NFL in scoring (500 points), was loaded
+with talent, boasting six Pro Bowl selections. Pro Bowl quarterback Cam
+Newton had one of his best seasons, throwing for 3,837 yards and rushing for
+636, while recording a career-high and league-leading 45 total touchdowns
+(35 passing, 10 rushing), a career-low 10 interceptions, and a career-best
+quarterback rating of 99.4. Newton’s leading receivers were tight end Greg
+Olsen, who caught a career-high 77 passes for 1,104 yards and seven
+touchdowns, and wide receiver Ted Ginn, Jr., who caught 44 passes for 739
+yards and 10 touchdowns; Ginn also rushed for 60 yards and returned 27
+punts for 277 yards. Other key receivers included veteran Jerricho Cotchery
+(39 receptions for 485 yards), rookie Devin Funchess (31 receptions for 473
+yards and five touchdowns), and second-year receiver Corey Brown (31
+receptions for 447 yards). The Panthers backfield featured Pro Bowl running
+back Jonathan Stewart, who led the team with 989 rushing yards and six
+touchdowns in 13 games, along with Pro Bow] fullback Mike Tolbert, who
+rushed for 256 yards and caught 18 passes for another 154 yards. Carolina’s
+offensive line also featured two Pro Bowl selections: center Ryan Kalil
+and guard Trai Turner.
+
+What position does Jerricho Cotchery play?
+
+Output: receivers
+
+Verb_V_Adjective_3
+
+Select the verb from a list of 3 words (1 verb, 2 adjectives).
+
+Input: dirty, dance, diligent
+Output: dance
+
+Verb_V _Adjective_5
+
+Select the verb from a list of 5 words (1 verb, 4 adjectives).
+
+Input: heavy, overcome, quick, modern, dazzling
+Output: overcome
+
+18
+
+A.3 ABLATION STUDY ON PROMPT TEMPLATES
+
+To assess the robustness of our method to prompt formatting, we conduct an ablation study using
+five prompt templates—each provided by FV (Todd et al.|/2023)—including the default template used
+in all other experiments. These templates are listed in Table|I2] For each template, we evaluate
+our method alongside 0-shot and 10-shot baselines across all 57 tasks using Llama-3.1-8B, with
+results reported in Table [13] Across all five templates, our method consistently achieves strong
+performance, with average accuracies ranging from 89.0% to 91.2%, significantly outperforming
+the 10-shot baseline (76.7%-77.8%). These results demonstrate the robustness of our method to
+variations in prompt format.
+
+Table 12: Prompt templates used in the ablation study. Each template shows how a single input-
+output pair ({a jx}, {yin }) is formatted. All templates are sourced from FV (Todd et al.| |2023).
+Template 1 serves as the default prompt format used in all main experiments.
+
+Prompt Template | Format of a single ({7;}, {yix}) pair
+Template 1 (Default) | Q:{xj,}\nA: {yin }\n\n
+
+Template 2 question: {z,,}\nanswer: {yi }\n\n
+Template 3 Az {xin }\nB: {yix}\n\n
+
+Template 4 {xix} —{yin}\n\n
+
+Template 5 input: {xx} output: {yi«}\n
+
+Table 13: Results of prompt template ablation using Llama-3.1-8B. Average accuracies for our
+method and the 0-shot/10-shot baselines are reported across five prompt templates. Results are
+shown for 29 abstractive tasks, 28 extractive tasks, and all 57 tasks, respectively. Our method con-
+sistently demonstrates strong performance across all templates.
+
+| Template 1 (default) | Template 2 | Template 3 | Template 4 | Template 5
+[0-shot 10-shot Ours |0-shot 10-shot Ours |0-shot 10-shot Ours |0-shot 10-shot Ours |0-shot 10-shot Ours
+
+Abstractive 2.7 76.1 88.0 | 3.6 77.0 87.8 | 3.7 75.1 874] 3.3 75.9 87.6| 24 764 86.3
+Extractive 17.3 77.3 92.1) 269 766 90.9] 23.2 79.2 93.0} 5.0 78.7 94.8] 25.0 79.2 91.7
+
+All (57 tasks)| 9.9 76.7 90.0 | 15.0 76.8 893] 133 771 902] 42 773 912] 135 778 89.0
+
+Task Type
+
+B_ TASK-WISE PERFORMANCE ACROSS 11 ADDITIONAL LLMs
+
+Figure[2]in Section|4.2|shows the average performance of our method across all 57 tasks, compared
+to the 0-shot and 10-shot baselines, for all 12 LLMs listed in Table[I] Task-wise results for Llama-
+3.1-8B are presented in Table[2Jof Section/4.2] while results for the remaining 11 LLMs are provided
+in Tables
+
+19
+
+Table 14: Task-wise performance on 57 ICL tasks using Gemma-3-4B-pt. Our method is evalu-
+ated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on 28
+extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.3 79.7 84.3 Adjective-V_Verb_3 16.7 74.3 95.2
+Antonym 0.4 66.3 66.7 Adjective_V_Verb_5 15.2 66.7 94.3
+Capitalize 1.2 99.4 99.4 Alphabetically_First_3 24.3 29.5 33.3
+Capitalize_First_Letter 1.2 99.4 99.4 Alphabetically _First_S 22.9 23.3 28.6
+Capitalize_Last_Letter 0.6 15.8 ng Alphabetically Last_3 21.9 30.5 37.1
+Capitalize_Second_Letter 0.0 25.5 64.2 Alphabetically Last_5 11.9 19.1 29.5
+Commonsense_QA 30.5 67.5 59.8 Animal_V_Object_3 10.5 70.5 98.1
+Country-Capital 0.0 92.9 88.1 Animal_V_Object_5 16.7 64.8 95.7
+Country-Currency 0.0 81.0 78.6 Choose_First_Of_3 65.2 99.5 100.0
+English-French 0.5 81.2 75.7 Choose_First_Of_5 82.9 98.6 100.0
+English-German 0.4 75.5 69.9 Choose_Last_Of_3 4.8 96.7 99.5
+English-Spanish 0.3 84.3 81.6 Choose_Last_Of_5 0.0 92.4 100.0
+Landmark-Country L7 82.3 78.3. Choose_Middle_Of 3 14 55.7 94.8
+Lowercase First_Letter 0.0 100.0 100.0 Choose_Middle_Of_5 0.5 21.9 51.9
+Lowercase_Last_Letter 0.6 37.4 94.7 Color.V_Animal.3 12.9 83.8 100.0
+National_Parks 74 79.0 79.0 Color-V_Animal_5 1.0 84.3. 99.1
+Next_Capital_Letter 2.3 1.8 35.7 Concept_V_Object_3 20.5 70.5 94.8
+Next_Item 0.0 894 915 Concept_V_Object_5 17.1 62.9 95.7
+Park-Country 21.7 82.2 77.1 Contl2003_Location 93 82.1 913
+Person-Instrument 0.9 65.4 69.2 Conll2003_Organization 126 75.6 88.4
+Person-Occupation 0.0 52.3 64.5 Conll2003_Person 129 879 95.7
+Person-Sport 0.0 94.0 98.5 Fruit V_Animal_3 62 148 98.6
+Present-Past 1.6 100.0 100.0 Fruit_V_Animal_5 33 71.0 99.5
+Prev_ttem 0.0 66.0 83.0 Qbject_V-_Concept.3 152 714 97
+Product-Company 28 78.9 78.9 Qbject_V_Concept_5 148 619 96.2
+Sentiment 0.0 95.9 94.7 Squad Val 53.1 85.8 86.0
+Sen ural 23 wo mo Verb_V Adjective 3 4 67.1 98.1
+Word Length 00 18.1 81 Verb_V _Adjective_S 5.2 71.0 98.6
+Average 2.9 W141 78.1 Average 179 S26 85.6
+
+20
+
+Table 15: Task-wise performance on 57 ICL tasks using Gemma-3-4B-it. Our method is evalu-
+ated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on 28
+extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.0 754 84.9 — Adjective-V_Verb3 3.8 116 97.6
+Antonym 0.0 66.3 70.2 Adjective_V_Verb_5 15.7 72.9 95.7
+Capitalize 0.0 99.4 99.4 Alphabetically_First_3 21.9 28.1 31.9
+Capitalize_First_Letter AT 96.5 100.0 Alphabetically _First_S 22.9 21.4 26.7
+Capitalize_Last_Letter 2.9 18.1 79.0 Alphabetically-Last_3 12.9 39.1 39.5
+Capitalize_Second_Letter 73 18.8 93.9 Alphabetically Last_5 16.7 25.7 29.1
+Commonsense_QA 59.6 68.8 61.6 Animal_V_Object_3 21.9 81.0 98.6
+Country-Capital 0.0 90.5 90.5. Animal_V_Object_5 23.3 910 97.1
+Country-Currency 0.0 69.1 78.6 Choose_First_Of_3 31.0 99.5 100.0
+English-French 0.3 814 714 — Choose-First_Of_5 25.7 99.5 100.0
+English-German 0.1 75.1 64.2 Choose_Last_Of_3 10.0 99.1 100.0
+English-Spanish 0.0 84.2 81.2 Choose_Last_Of_5 15.7 94.8 100.0
+Landmark-Country 0.0 76.6 74.9 Choose_Middle_Of 3 7.6 70.0 94.3
+Lowercase First_Letter 0.0 99.4 100.0 Choose_Middle_Of_5 12.4 35.2 66.7
+Lowercase_Last_Letter 0.0 39.8 90.6 Color.V_Animal.3 17.1 1A 100.0
+National_Parks 0.0 69.5 70.5 Color-V_Animal_5 13.8 79.5 99.1
+Next_Capital_Letter 2.3 47 65.5 Concept_V_Object_3 27.6 61.9 97.6
+Next_Item 2.1 97.9 95.7 Concept_V _Object_5 34.3 75.2 93.3
+Park-Country 0.0 764 72.6 Conll2003_Location 11 864 924
+Person-Instrument 0.0 48.6 57.0 ConlI2003_Organization 19.7. 77.8 88.2
+Person-Occupation 0.0 39.5 62.8 Conl12003_Person 23.1 934 964
+Person-Sport 0.0 94.0 97.0 Fruit V_Animal_3 114 748 ~—-976
+Present-Past 0.0 100.0 98.4 Fruit_V_Animal_5 48 82.9 100.0
+Prev_ttem 2.1 74.5 87.2 Qbject_V-_Concept.3 33 7116 976
+Product-Company 28 72.5 66.1 Qbject_V_Concept_5 33 676 96.2
+Sentiment 0.0 91.0 94.3 squad_Val 717 87.9 86.4
+Sen ural ep wo ae Verb_V Adjective 3 38 695.987
+Word Length 00 38.0 684 Verb_V _Adjective_S 6.7 71.4 99.1
+‘Average 3.1 69.5 02 _sverage 175119 863
+
+21
+
+Table 16: Task-wise performance on 57 ICL tasks using Mistral-7B-v0.3. Our method is evalu-
+ated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on 28
+extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.4 81.0 88.9 —— Adjective-V_Verb_3 348 76.7 98.1
+Antonym 19 68.3 67.9 Adjective_V_Verb_5 16.7 79.1 97.1
+Capitalize 6.5 100.0 100.0 Alphabetically_First_3 31.0 32.9 53.8
+Capitalize_First_Letter 6.5 90.0 99.4 Alphabetically _First_S 20.5 22.9 86.2
+Capitalize_Last_Letter 0.6 33.9 86.6 Alphabetically Last_3 24.8 27.1 45.7
+Capitalize_Second_Letter 0.6 27.9 96.4 Alphabetically Last_5 11.0 18.6 514
+Commonsense_QA 21.1 70.8 59.0 Animal_V_Object_3 24.3 19 96.7
+Country-Capital 48 90.5 88.1 Animal_V_Object_5 24.3 88.1 99.1
+Country-Currency 0.0 78.6 78.6 Choose_First_Of_3 81.4 100.0 100.0
+English-French 0.3 79.8 77.7 Choose-First-Of_5 238 100.0 99.1
+English-German 14 74.0 63.2 Choose_Last_Of_3 2.9 99.5 100.0
+English-Spanish 0.3 84.6 79.6 Choose_Last_Of_5 19 97.1 100.0
+Landmark-Country 0.0 85.1 82.9 Choose_Middle_Of 3 5.7 429 98.6
+Lowercase First_Letter 0.0 83.0 100.0 Choose_Middle_Of_5 0.5 33.3 70.5
+Lowercase_Last_Letter 0.0 49.1 95.3 Color.V_Animal.3 28.6 84.3 99.1
+National_Parks Ll 79.0 77.9 Color V_Animal_5 17.6 85.2 99.1
+Next_Capital_Letter 0.6 5.3 98.8 Concept_V_Object_3 19.1 716 99.1
+Next_Item 0.0 97.9 97.9 Concept_V_Object_5 17.1 88.1 97.1
+Park-Country 0.0 87.3 79.6 Conll2003_Location 97 87.2 94.5
+Person-Instrument 0.0 75.7 76.6 Conll2003_Organization 9.3 711 92.0
+Person-Occupation 0.0 59.9 70.0 Conll2003_Person 97 921 (97.6
+Person-Sport 0.0 92.5 97.0 Fruit_V_Animal.3 29.1 87.1 98.6
+Present-Past 16 98.4 100.0 Fruit_V_Animal_5 13.3 93.3. 98.6
+Prev Item 0.0 915 95.7 Object V_Concept 3 276 814 98.6
+Product-Company 0.9 82.6 80.7 Object_V_Concept_5 143. 810 97.6
+Sentiment 0.0 94.7 93.9 Squad Val 584 84.9 88.9
+Syne Tural 3 13 na Verb_V_Adjective_3 243 67.6 © 97.1
+Word Length 00 316 637 Verb_V_Adjective_5 9.1 80.0 98.1
+‘Average 20. 73.8 842 _Average 29 BS
+
+22
+
+Table 17: Task-wise performance on 57 ICL tasks using Mistral-7B-Instruct-v0.3. Our method
+is evaluated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results
+on 28 extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.0 79.5 884 — Adjective-V_Verb3 14.8 78.6 99.1
+Antonym 1.2 69.8 70.0 Adjective_V_Verb_5 1.0 83.8 98.1
+Capitalize 31.8 99.4 100.0 Alphabetically_First_3 16.7 31.9 45.2
+Capitalize_First_Letter 30.6 98.2 99.4 Alphabetically _First_S 48 24.8 88.6
+Capitalize_Last_Letter 0.6 30.4 90.6 Alphabetically Last_3 114 314 48.1
+Capitalize_Second_Letter 1.8 26.1 95.8 Alphabetically Last_5 6.7 22.4 42.4
+Commonsense_QA 24.0 71.8 66.1 Animal_V_Object_3 10.5 84.3 97.1
+Country-Capital 48 88.1 88.1 Animal_V_Object_5 43 94.8 98.1
+Country-Currency 0.0 78.6 714 — Choose_First_Of3 414 99.5 99.1
+English-French 0.4 82.4 79.3 Choose-First_Of_5 8.6 96.2 99.1
+English-German 15 75.5 60.5 Choose_Last_Of 3 5.2 88.1 100.0
+English-Spanish 0.3 85.4 80.0 Choose_Last_Of_5 1.0 87.1 100.0
+Landmark-Country 0.0 84.6 80.6 Choose_Middle_Of 3 5.7 45.2 96.2
+Lowercase First_Letter 0.0 97.7 100.0 Choose_Middle_Of_5 1.9 41.0 96.7
+Lowercase_Last_Letter 0.0 42.7 95.3 Color.V_Animal.3 143 82.4 100.0
+National_Parks Ll 80.0 75.8 Color_V_Animal_5 19 914 99.5
+Next_Capital_Letter 0.0 4l 97.7 Concept_V_Object_3 8.1 88.1 97.6
+Next_Item 0.0 97.9 95.7 Concept.V -Object_5 5.2 90.5 99.1
+Park-Country 0.0 84.7 80.9 ConI12003_Location 5.6 84.0 95.2
+Person-Instrument 19 71.0 75.7 Conll2003-Organization 9.7 796 928
+Person-Occupation 0.6 54.7 66.3 Conl12003_Person 22.3 899 97.7
+Person-Sport 0.0 92.5 94.0 Fruit V_Animal_3 138 943 99.1
+Present-Past 33 98.4 100.0 Fruit V_Animal_5 1.0 97.6 100.0
+Prev_ttem 43 89.4 97-9 Opject_V_Concept3 15.2 786 98.1
+Product-Company 0.0 798 81.7 Qpject_V_Concept_5 33-8438.
+Sentiment 0.0 94.3943 Squad Val 604 875 88.1
+Sen ural ie 10 ne Verb_V Adjective 3 10.0 681 96.7
+Word Length 06 532 626 Verb_V_Adjective_5 2.9 79.5 97.6
+‘Average 40. 746 ~—-84.0—_AVerage Wo B27
+
+23
+
+Table 18: Task-wise performance on 57 ICL tasks using Llama-3.1-8B-Instruct. Our method is
+evaluated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on
+28 extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.0 716 90.0 Adjective-V_Verb3 14.3 87.6 100.0
+Antonym 0.4 70.8 71.6 Adjective_V_Verb_5 13.3 91.0 97.1
+Capitalize 0.6 99.4 99.4 Alphabetically_First_3 26.7 37.6 514
+Capitalize_First_Letter 2.4 100.0 100.0 Alphabetically _First_S 18.6 22.4 92.4
+Capitalize_Last_Letter 2.3 49.7 95.3 Alphabetically Last_3 16.2 37.6 49.1
+Capitalize_Second_Letter 1.8 49.7 100.0 Alphabetically _Last_5 11.0 28.6 74.3
+Commonsense_QA 71.3 74.0 72.0 Animal_V_Object_3 21.9 95.7 99.5
+Country-Capital 24 90.5 90.5. Animal_V_Object_5 6.7 96.7 100.0
+Country-Currency 0.0 81.0 85.7 Choose_First-Of_3 19.5 97.6 100.0
+English-French 0.7 83.1 82.0 Choose_First-Of_5 9.1 97.1 100.0
+English-German 0.7 76.7 70.1 Choose_Last_Of 3 29.5 93.3 100.0
+English-Spanish 0.2 84.8 84.3 Choose_Last_Of_5 26.2 94.3 100.0
+Landmark-Country 0.0 88.0 82.9 Choose_Middle_Of.3 15.2 53.3 99.1
+Lowercase_First_Letter 0.0 100.0 99.4 Choose_Middle_Of_5 9.5 33.8 96.7
+Lowercase_Last_Letter 0.0 60.2 97.1 Color.V_Animal.3 29.5 99.5 100.0
+National_Parks 11 86.3. 75.8 Color-V_Animal_5 8.6 97.6 100.0
+Next_Capital_Letter 1.2 2.9 99.4 Concept_V_Object_3 26.2 91.9 99.5
+Next_Item 0.0 97.9 97.9 Concept_V_Object_5 17.1 95.2 97.1
+Park-Country 13 89.2 84.1 Conll2003_Location 10.2 90.1 94.7
+Person-Instrument 0.0 82.2 88.8 Conll2003_Organization 33.6 80.6 93.7
+Person-Occupation 0.0 65.1 77-3 Contl2003_Person 2.9 934 975
+Person-Sport 0.0 95.5 97.0 Fruit V_Animal_3 48 99.5 99.1
+Present-Past 1.6 100.0 100.0 Fruit_V_Animal_5 0.5 98.1 99.5
+Prev tem 430 915 95.7 Opject-V-Concept-3 26.7 «948 «98.6
+Product-Company 18 844 84.4 Opject_V-Concept_5 171 948 99.5
+Sentiment 1 re a a Squad_Val 766 878 90.1
+ingular-Plural . . ry + +
+
+Synonym 3.1 533° S81 \ehviAdectveS «= «8ST. ODLL
+Word_Length 0.0 743 © 83.6 —S aIeCtve : : :
+‘Average 45. 79.4 88.0  _‘Average 189 Sle 938
+
+24
+
+Table 19: Task-wise performance on 57 ICL tasks using Qwen3-8B. Our method is evaluated
+alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on 28 extrac-
+tive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.0 778 87.7 Adjective_V_Verb_3 0.5 71.6 98.1
+Antonym 0.0 69.4 66.5 Adjective_V_Verb_5 0.0 87.1 98.6
+Capitalize 19.4 99.4 98.8 Alphabetically_First_3 5.2 31.0 42.4
+Capitalize_First_Letter 16.5 97.7 100.0 Alphabetically _First_S 2.4 20.5 89.5
+Capitalize_Last_Letter 4 24.6 93.0 Alphabetically-Last_3 2.9 38.1 42.4
+Capitalize_Second_Letter 11.5 30.3 97.6 Alphabetically Last_5 2.4 20.0 80.0
+Commonsense_QA 42.2 80.8 79.8 Animal_V_Object_3 14 96.7 95.7
+Country-Capital 48 88.1 88.1 Animal_V_Object_5 0.5 98.1 96.7
+Country-Currency 0.0 81.0 64.3. Choose_First_Of.3 5.7 95.7 100.0
+English-French 0.3 82.3. 69.4 — Choose_First_Of_5 1.0 94.8 100.0
+English-German 07 73.3 57.5 Choose_Last_Of_3 2.4 914 100.0
+English-Spanish 0.2 844 73.9 Choose_Last_Of_5 14 66.2 100.0
+Landmark-Country 0.0 81.1 71.7 Choose_Middle_Of_3 2.9 62.9 99.5
+Lowercase First_Letter 0.0 98.8 100.0 Choose_Middle_Of_5 0.5 31.4 98.1
+Lowercase_Last_Letter 0.0 60.2 97.7 Color.V_Animal.3 2.9 99.5 100.0
+National_Parks 0.0 79.0 70.5 Color-V_Animal_5 43 98.6 100.0
+Next_Capital_Letter 0.6 8.8 92.4 Concept_V_Object_3 1.0 91.9 100.0
+Next_Item 0.0 95.7 95.7 Concept.V-Object_5 0.0 90.5 95.7
+Park-Country 0.0 80.9 70.1 Contl2003_Location 11 91.0 95.1
+Person-Instrument 0.0 62.6 62.6 Conll2003_Organization 15.1 83.6 90.7
+Person-Occupation 0.0 46.5 60:5 Cont12003_Person 268 940 96.6
+Person-Sport 0.0 89.6 97.0 Fruit_V_Animal_3 67 1000 100.0
+Present-Past 1.6 100.0 98.4 Fruit_V_Animal_5 5.2 995 99.5
+Prev_ttem 43 97.9 93.6 Qbject_V_Concept.3 0.0 914 971
+Product-Company 0.0 77.1 80.7 Qbject_V-Concept_5 0.0 938 96.7
+Sentiment 0.0 95.1 95.9 sauad_Val 38.1 90.7 88.3
+Sen ural ne eo ae Verb.V_Adjective 3 19 919-995
+Word Length 00 678 737 Verb_V _Adjective_S 0.0 97.1 96.2
+‘Average 38 51 82a _Average 50 BS 7
+
+25
+
+Table 20: Task-wise performance on 57 ICL tasks using Qwen3-32B. Our method is evaluated
+alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on 28 extrac-
+tive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.1 81.8 88.2 Adjective-V_Verb_3 6.2 78.1 99.5
+Antonym 8.5 67.1 65.7 Adjective_V_Verb_5 4.8 81.0 98.1
+Capitalize 47 93.5 99.4 Alphabetically_First_3 7A 38.1 97.6
+Capitalize_First_Letter 6.5 97.7 100.0 Alphabetically _First_S 3.3 22.9 92.9
+Capitalize_Last_Letter 7.0 24.0 95.3 Alphabetically-Last_3 5.2 36.2 43.3
+Capitalize_Second_Letter 3.0 29.1 97.0 Alphabetically Last_5 2.4 17.6 71.0
+Commonsense_QA 38.9 86.2 84.5 Animal_V_Object_3 11.0 97.6 99.1
+Country-Capital 7A 76.2 90.5. Animal_V_Object_5 11.0 986 = 98.6
+Country-Currency 0.0 81.0 81.0 — Choose_First_Of.3 14.8 95.7 100.0
+English-French 0.4 80.2. 77.2. Choose_First_Of_5 67 95.2 100.0
+English-German 0.5 76.1 66.2 Choose_Last_Of_3 14 92.9 100.0
+English-Spanish 0.0 82.9 80.1 Choose_Last_Of_5 2.9 85.7 100.0
+Landmark-Country 0.0 84.0 811 Choose_Middle_Of.3 14 56.2 100.0
+Lowercase First_Letter 0.6 89.5 99.4 Choose_Middle_Of_5 0.0 32.9 98.1
+Lowercase_Last_Letter 0.6 39.8 95.3 Color.V_Animal.3 48 96.2 100.0
+National_Parks 0.0 83.2 79.0 Color_V_Animal_5 8.6 97.6 99.5
+Next_Capital_Letter 2.3 2.9 98.3 Concept_V_Object_3 1.9 88.1 99.1
+Next_Item 0.0 85.1 95.7 Concept_V_Object_5 1.0 97.1 98.1
+Park-Country 0.0 84.1 77-7 Contl2003_Location 2.1 89.4 95.7
+Person-Instrument 0.0 56.1 71.0 Conll2003_Organization 8.7 83.8 923
+Person-Occupation 0.0 36.6 69.2 Conl12003_Person 151 93.8 96.8
+Person-Sport 0.0 88.1 955° Fruit_V_Animal_3 52 100.0 100.0
+Present-Past 0.0 83.6 98-4 Fruit_V_Animal_5 62 1000 99.5
+Prev_ttem 0.0 78.7 97.9 Qbject_V-_Concept.3 43 96.2 99.5
+Product-Company 0.0 83.5 844 —— Opject_V_Concept_5 29 94.3 98.6
+Sentiment 2.0 93.9 92.2 sauad_Val 316 908 90.5
+Sen ural 3 ne ae Verb_V_Adjective_3 05 914 100.0
+Word Length 00 778 73.1 Verb_V _Adjective_S 1.4 98.6 99.5
+‘Average 30 720 55  _Average 62 802953
+
+26
+
+Table 21: Task-wise performance on 57 ICL tasks using Mixtral-8x7B-v0.1. Our method is
+evaluated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on
+28 extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.3 81.5 89.9 Adjective_V_Verb_3 26.2 84.3 99.5
+Antonym 3.8 70.4 67.3 Adjective_V_Verb_5 18.1 83.8 97.6
+Capitalize 8.8 99.4 100.0 Alphabetically_First_3 28.1 37.1 46.2
+Capitalize_First_Letter 8.2 97.7 100.0 Alphabetically _First_S 20.5 22.9 89.1
+Capitalize_Last_Letter 0.6 39.2 91.8 Alphabetically Last_3 16.2 39.1 51.0
+Capitalize_Second_Letter 0.0 32.1 95.8 Alphabetically Last_5 13.8 20.5 46.2
+Commonsense_QA 39.5 73.9 61.8 Animal_V_Object_3 214 94.3 97.1
+Country-Capital 48 90.5 85.7 Animal_V_Object_5 24.8 919 98.1
+Country-Currency 0.0 83.3. 83.3. Choose_First_Of.3 65.7 99.1 100.0
+English-French 0.2 84.3 82.0 Choose_First_Of_5 B23 99.1 100.0
+English-German 0.8 78.2 74.4 Choose_Last_Of_3 2.9 99.5 100.0
+English-Spanish 0.2 86.4 87.6 Choose_Last_Of_5 2.4 95.7 99.5
+Landmark-Country 0.0 90.3 85.1 Choose_Middle_Of.3 43 50.5 98.1
+Lowercase First_Letter 0.0 93.6 100.0 Choose_Middle_Of_5 1.4 28.1 89.5
+Lowercase_Last_Letter 0.0 46.2 94.7 Color.V_Animal.3 22.9 97.6 100.0
+National_Parks Ll 85.3. 79.0 Color_V_Animal_5 91 97.1 99.5
+Next_Capital_Letter 1.8 5.3 98.3 Concept_V_Object_3 18.6 16.2 99.1
+Next_Item 0.0 97.9 97.9 Concept-V -Object_5 13.8 86.7 95.7
+Park-Country 0.0 91.7 87.9 Conll2003_Location 6.8 88.6 93.7
+Person-Instrument 0.0 84.1 87-9 Conll2003_Organization 12.3 77.2 92.3
+Person-Occupation 0.0 77.9 82.6 Conl12003_Person 8.1 938 97.9
+Person-Sport 0.0 95.5 98.5 Fruit V_Animal_3 310 971 99.1
+Present-Past 1.6 100.0 100.0 Fruit_V_Animal_5 6.7 97.1 99.5
+Prev_ttem 2.1 97.9 97.9 Qbject_V-_Concept.3 29 914 991
+Product-Company 0.0 89.9 88.1 Object_V_Concept_5 129 86.797.
+Sentiment 0.0 96.3 95.1 Squad_Val 58.9 86.2 87.5
+Sen ural eS 00 we Verb_V Adjective 3 8.1 70.5 96.7
+Word Length 00 754 743 Verb_V_Adjective_5 43 90.0 98.6
+‘Average 26793875 Average 198 9
+
+27
+
+Table 22: Task-wise performance on 57 ICL tasks using Mixtral-8x7B-Instruct-v0.1. Our
+method is evaluated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks.
+(b) Results on 28 extractive tasks. The best results are shown in bold, and the second-best results
+are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.0 81.3 89.2 Adjective_V_Verb_3 30.0 87.6 97.1
+Antonym 0.0 724 67.7 Adjective_V_Verb_5 17.6 89.5 98.1
+Capitalize 47 99.4 100.0 Alphabetically_First_3 21.9 39.1 39.1
+Capitalize_First_Letter 8.2 99.4 100.0 Alphabetically First_S 14.3 24.8 771.6
+Capitalize_Last_Letter 0.6 25.7 87.1 Alphabetically-Last_3 14.8 30.5 48.6
+Capitalize_Second_Letter 0.6 27.9 92.1 Alphabetically-Last_5 8.6 24.3 42.9
+Commonsense_QA 56.8 73.9 67.5 Animal_V_Object_3 12.9 93.3 97.6
+Country-Capital 48 90.5 83.3 Animal_V_Object_5 8.1 95.7 98.6
+Country-Currency 0.0 73.8 81.0 — Choose_First_Of_3 59.5 98.1 98.6
+English-French 0.0 84.7 82.0 Choose_First_Of_5 35.7 94.8 99.1
+English-German 0.2 77.2 715 Choose_Last_Of_3 5.7 97.1 100.0
+English-Spanish 0.1 85.8 85.4 Choose_Last_Of_5 6.7 95.7 100.0
+Landmark-Country 0.0 92.0 82.3 Choose_Middle_Of.3 19 53.3 97.1
+Lowercase_First_Letter 0.0 97.1 100.0 Choose_Middle_Of_5 2.4 28.1 79.1
+Lowercase_Last_Letter 0.0 48.0 97.7 Color.V_Animal.3 20.0 98.6 100.0
+National_Parks 2.1 80.0 76.8 — Color-V_Animal_5 1.0 96.7 99.1
+Next_Capital_Letter 0.6 5.3 99.4 Concept_V_Object_3 16.7 86.2 99.1
+Next_Item 0.0 97.9 95.7 Concept_V_Object_5 TA 92.9 96.7
+Park-Country 0.0 90.5 87.9 Conll2003_Location 6.5 894 94.1
+Person-Instrument 0.0 84.1 88.8 Cont12003_Organization 7.6 80.6 93.9
+Person-Occupation 0.0 744 82.6 Conl12003_Person 208 926 96.6
+Person-Sport 0.0 95.5 98.5 Fruit V_Animal_3 71 (O71 97
+Present-Past 0.0 100.0 100.0 Fruit.V_Animal_5 1.0 97.6 98.6
+Prev_Item 0.0 93.6 95.7 Qbject_V_Concept.3 138 924 97.1
+Product-Company 0.0 91.7 88.1 Qbject_V_Concept_5 67 87.6 96.2
+Sentiment 0.0 94.7 93.9 Saquad_Val 593 848 873
+Singular-Plural 0.0 100.0 100.0 Verb_V_Adjective 3 14.8 14 97.6
+Wont dngth Oo 2 ue #e Verb_V Adjective 5 24 85.7 100.0
+‘Average 27 715 86.5 Average 15.5 78.8 90.2
+
+28
+
+Table 23: Task-wise performance on 57 ICL tasks using Llama-3.1-70B. Our method is evalu-
+ated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on 28
+extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.4 84.3 91.0 — Adjective-V_Verb_3 29.1 89.1 100.0
+Antonym 16.7 71.6 714 — Adjective.V_Verb_5 17.1 86.7 100.0
+Capitalize 0.0 99.4 100.0 Alphabetically_First_3 30.0 37.1 98.6
+Capitalize_First_Letter 0.6 100.0 100.0 Alphabetically _First_S 22.4 30.5 96.7
+Capitalize_Last_Letter 0.0 35.1 97.7 Alphabetically Last_3 23.3 34.8 62.9
+Capitalize_Second_Letter 0.0 37.6 98.2 Alphabetically Last_5 12.9 23.8 93.8
+Commonsense_QA 31.1 78.7 73.9 Animal_V_Object_3 22.4 98.6 97.6
+Country-Capital 48 92.9 92.9 Animal_V_Object_5 21.9 97.1 99.1
+Country-Currency 0.0 78.6 83.3. Choose_First_Of_3 81.9 100.0 100.0
+English-French 0.3 85.5 85.6 Choose_First_Of_5 88.6 100.0 100.0
+English-German 1.0 81.5 80.0 Choose_Last_Of_3 0.0 94.8 100.0
+English-Spanish 0.3 89.8 89.2 Choose_Last_Of_5 0.0 99.1 100.0
+Landmark-Country 0.0 89.1 84.0 Choose_Middle_Of 3 0.5 68.1 98.6
+Lowercase First_Letter 0.0 98.8 100.0 Choose_Middle_Of_5 0.0 36.2 98.1
+Lowercase_Last_Letter 0.0 42.7 99.4 Color.V_Animal.3 26.7 99.5 100.0
+National_Parks 20.0 81.1 75.8 Color-V_Animal_5 13.3 98.6 100.0
+Next_Capital_Letter 0.6 94 100.0 Concept_V_Object_3 20.5 93.3 99.1
+Next_Item 43 95.7 95.7 Concept_V _Object_5 18.1 919 97.6
+Park-Country 48.4 91.7 86.0 Cont12003_Location 206 923 96.8
+Person-Instrument 0.0 79-4 83.2 Conll2003_Organization 36.9 85.1 93.6
+Person-Occupation 0.0 66.9 83.7 Conl12003_Person 13.7 95.0 98.7
+Person-Sport 0.0 97.0 98.5 Fruit V_Animal_3 176 100.0 99.5
+Present-Past 1.6 100.0 100.0 Fruit_V_Animal_5 6.7 99.5 99.5
+Prev_ttem 2.1 97.9 97.9 Qbject_V_Concept.3 214. 98.6 99.1
+Product-Company 18 90.8 88.1 Qbject_V_Concept_5 15.7 89.1 99.1
+Sentiment 0.0 98.0 96.3 gquad_Val 488 884 904
+Sen ural 33 1000 ae Verb_V_Adjective_3 24 90.5 100.0
+Word Length 00 72 871 Verb_V _Adjective_S 12.9 96.7 99.5
+‘Average 48 795 gos _Average 23.0 82797
+
+29
+
+Table 24: Task-wise performance on 57 ICL tasks using Llama-3.1-70B-Instruct. Our method is
+evaluated alongside 0-shot and 10-shot baselines. (a) Results on 29 abstractive tasks. (b) Results on
+28 extractive tasks. The best results are shown in bold, and the second-best results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+Task Name 0-shot 10-shot Ours Task Name 0-shot 10-shot Ours
+AG_News 0.4 83.6 91.4 — Adjective-V_Verb_3 26.7 94.8 99.5
+Antonym 23.4 70.6 71.0 Adjective_V_Verb_5 8.1 95.7 99.5
+Capitalize 41 100.0 99.4 Alphabetically_First_3 18.1 37.6 96.7
+Capitalize_First_Letter 3.5 100.0 100.0 Alphabetically _First_S 6.2 25.7 96.2
+Capitalize_Last_Letter 0.6 54.4 97.7 Alphabetically Last_3 14.3 38.6 93.3
+Capitalize_Second_Letter 0.6 41.8 98.8 Alphabetically Last_5 0.5 21.0 78.6
+Commonsense_QA 76.0 80.8 71.6 Animal_V_Object_3 5.2 99.5 99.1
+Country-Capital 7A 90.5 88.1 Animal_V_Object_5 1.0 100.0 99.5
+Country-Currency 0.0 76.2 85.7 Choose_First_Of_3 27.6 98.6 100.0
+English-French 0.3 86.2 86.3. Choose_First_Of_5 17.6 98.6 100.0
+English-German 14 81.2 80.4 Choose_Last_Of_3 5.2 94.8 100.0
+English-Spanish 0.5 88.6 88.2 Choose_Last_Of_5 2.9 92.4 100.0
+Landmark-Country 17 88.0 84.6 Choose_Middle_Of.3 14 60.5 100.0
+Lowercase First_Letter 0.0 100.0 100.0 Choose_Middle_Of_5 1.4 31.9 99.5
+Lowercase_Last_Letter 0.0 7718 98.3 Color.V_Animal.3 3.8 99.1 100.0
+National_Parks 6.3 83.2 76.8 Color.V_Animal_5 0.5 98.1 100.0
+Next_Capital_Letter 12 18.1 98.8 Concept_V_Object.3 3.8 96.2 100.0
+Next_Item 6.4 97.9 95.7 Concept_V -Object_5 14 97.1 99.1
+Park-Country 3.8 89.8 84.1 Contl2003_Location 243 «9212971
+Person-Instrument 0.0 76.6 813° Conll2003_Organization 40.9 814 94.2
+Person-Occupation 0.0 63.4 72.7 Conl12003_Person 219 969 98.1
+Person-Sport 0.0 97.0 98.5 Fruit V_Animal_3 52 100.0 99.5
+Present-Past 33 93.4 100.0 Fruit V_Animal_5 14. 1000 99.5
+Prev_ttem 8.5 97.9 97.9 Qbject_V_Concept.3 13.3. 991 99.1
+Product-Company 18 87.2 88.1 Object_V_Concept_5 48 94.8 100.0
+Sentiment 0.0 94.3 95.9 sauad_Val 668 889 914
+Sen ural 3 1000 oo Verb_V_Adjective_3 11994399.
+Word Length 00 87.1 836 Verb_V _Adjective_S 43 97.1 99.5
+Average 5.7 81.4 88.9 Average 12.2 83.0 97.8
+
+30
+
+C EXTENDED ANALYSIS OF TASK-RELEVANT HEAD IDENTIFICATION
+
+C.1 OPTIMIZED SOFT HEAD-SELECTION VALUES FOR ALL 57 TASKS
+
+In this section, we present extended results of Figure!
+of the soft head-selection parameters for all 57 tasks using Llama-
+
+provided in Figures|6]8|
+
+showing the optimized values
+.1-8B. The full set of results is
+
+gy Ag_News Antonym Capitalize
+
+s
+
+©
+
+S
+
+@
+
+o
+
+a
+
+3
+
+8
+
+@
+
+=
+
+#
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Capitalize_First_Letter Capitalize_Last_Letter Capitalize_Second_Letter
+
+Fs
+
+©
+
+S
+
+©
+
+9
+
+a
+
+3
+
+8
+
+@
+
+=
+
+#
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+g Commonsense_QA Country-Capital Country-Currency
+
+Fs
+
+©
+
+S
+
+©
+
+9
+
+a
+
+3
+
+8
+
+g
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y English-French English-German English-Spanish
+
+s
+
+©
+
+S
+
+@
+
+o
+
+a
+
+3
+
+8
+
+g
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Landmark-Country Lowercase _First_Letter Lowercase_Last_Letter
+
+s
+
+©
+
+5
+
+B
+
+@
+
+o
+
+y
+
+3
+
+3
+
+fy
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y National_Parks Next_Item Park-Country
+
+s
+
+©
+
+5
+
+B
+
+@
+
+o
+
+y
+
+3
+
+3
+
+fy
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+Sorted Attention Head Index Sorted Attention Head Index Sorted Attention Head Index
+
+— Optimized Values ---- Initial Value (0.5)
+
+Figure 6: Optimized values of soft head-selection parameters for 57 ICL tasks (part 1 of 3).
+Each plot shows the optimized values of the soft head-selection parameters for all 1024 attention
+heads in Llama-3.1-8B, sorted in descending order. Dashed lines indicate the initial value of 0.5
+assigned to all selection parameters at the start of training. Plots for the remaining tasks are provided
+
+in Figures[7}8|
+
+31
+
+Soft Head-Selection Value
+
+Animal_V_Object_5
+
+Choose _First_Of_3
+
+y Person-Instrument Person-Occupation Person-Sport
+
+s
+
+©
+
+S
+
+@
+
+oO
+
+y
+
+3
+
+3
+
+S
+
+z
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+g Present-Past Prev_Item Product-Company
+Fs
+
+©
+
+S
+
+©
+
+o
+
+a
+
+3
+
+3
+
+S
+
+z
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+gy Sentiment Singular-Plural Synonym
+
+s
+
+©
+
+S
+
+@
+
+o
+
+a
+
+3
+
+3
+
+©
+
+z
+
+&
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+g Word_Length Next_Capital_Letter Adjective_V_Verb_3
+s
+
+iS
+
+S
+
+g
+
+o
+
+a
+
+3
+
+8
+
+8
+
+Fa
+
+ic
+
+un oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+y Adjective_V_Verb_5 Alphabetically _First_3 Alphabetically First_5
+s
+
+iS
+
+S
+
+o
+
+oO
+
+y
+
+3
+
+3
+
+S
+
+z
+
+ic
+
+un oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+y Alphabetically _Last_3 Alphabetically Last_5 Animal_V_Object_3
+s
+
+©
+
+S
+
+o
+
+oO
+
+y
+
+3
+
+3
+
+S
+
+z
+
+ic
+
+un oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+Choose First_Of_5
+
+0
+
+200 400 600 800
+Sorted Attention Head Index
+
+1000
+
+0
+
+200 400 600 800
+Sorted Attention Head Index
+
+1000
+
+0
+
+200 400 600 800
+Sorted Attention Head Index
+
+1000
+
+— Optimized Values ---- Initial Value (0.5)
+
+Figure 7: Optimized values of soft head-selection parameters for 57 ICL tasks (part 2 of 3).
+This figure continues from Figure(6] Each plot shows the optimized values of the soft head-selection
+parameters for all 1024 attention heads in Llama-3.1-8B, sorted in descending order. Dashed lines
+indicate the initial value of 0.5 assigned to all selection parameters at the start of training. Plots for
+the remaining tasks are provided in Figure[8]
+
+32
+
+gy Choose_Last_Of_3 Choose_Last_Of_5 Choose_Middle_Of_3
+
+s
+
+©
+
+S
+
+©
+
+9
+
+a
+
+3
+
+8
+
+@
+
+=
+
+#
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Choose_Middle_Of_5 Color_V_Animal_3 Color_V_Animal_5
+
+Fs
+
+©
+
+S
+
+©
+
+9
+
+a
+
+3
+
+8
+
+g
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Concept_V_Object_3 Concept_V_Object_5 Conll2003_Location
+
+Fs
+
+©
+
+S
+
+@
+
+o
+
+a
+
+3
+
+8
+
+g
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Conll2003_Organization Conll2003_Person Fruit_V_Animal_3
+
+s
+
+©
+
+5
+
+B
+
+@
+
+o
+
+y
+
+3
+
+3
+
+fy
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Fruit_V_Animal_5 Object_V_Concept_3 Object_V_Concept_5
+
+s
+
+©
+
+5
+
+B
+
+@
+
+o
+
+y
+
+3
+
+3
+
+fy
+
+=
+
+S
+
+a oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+
+y Squad_Val Verb_V_Adjective_3 Verb_V_Adjective_5
+
+s
+
+©
+
+S
+
+o
+
+o
+
+y
+
+3
+
+3
+
+fy
+
+=
+
+ic
+
+un oO 200 400 600 800 1000 oO 200 400 600 800 1000 oO 200 400 600 800 1000
+Sorted Attention Head Index Sorted Attention Head Index Sorted Attention Head Index
+
+— Optimized Values ---- Initial Value (0.5)
+
+Figure 8: Optimized values of soft head-selection parameters for 57 ICL tasks (part 3 of 3).
+This figure concludes the series from Figures |6{/7|Each plot shows the optimized values of the soft
+head-selection parameters for all 1024 attention heads in Llama-3.1-8B, sorted in descending order.
+Dashed lines indicate the initial value of 0.5 assigned to all selection parameters at the start of
+training.
+
+33
+
+C.2 OPTIMIZED SOFT HEAD-SELECTION VALUES FOR LARGER LANGUAGE MODELS
+
+Figures |9]{1 1|present the optimized values of the soft head-selection parameters for larger models—
+
+Qwen3-32B, Mixtral-8x7B-v0.1, and
+exhibit consistent overall trends, simi
+
+Ag_News
+
+Person-Instrument
+
+Capitalize _Last_Letter
+
+Llama-3.1-70B-across six selected tasks. The resulting plots
+lar to those observed with Llama-3.1-8B in Section
+
+5.1]
+
+7000
+Choose_Middle_Of 5
+
+2000-3000 4000
+
+0 1000
+Conll2003_Organization
+
+2000-3000 4000 0
+
+1000
+Alphabetically Last_5
+
+2000-3000 4000
+
+Soft Head-Selection Value Soft Head-Selection Value
+
+01000 «2000 +~—«3000
+Sorted Attention Head Index
+
+4000
+
+— Optimized Values
+
+Figure 9:
+
+01000-2000 +~—«3000
+Sorted Attention Head Index
+
+---- Initial Value (0.5)
+
+4000 0
+
+1000-2000 3000
+Sorted Attention Head Index
+
+4000
+
+Optimized values of soft head-selection parameters for six ICL tasks using Qwen3-
+
+32B. Each plot shows the optimized values of the soft head-selection parameters for all 4096 atten-
+
+tion heads in Qwen3-32B, sorted in
+assigned to all selection parameters at
+
+Ag_News
+
+t the start of training.
+
+Person-Instrument
+
+Capitalize _Last_Letter
+
+lescending order. Dashed lines indicate the initial value of 0.5
+
+$200
+Choose Middle_Of 5
+
+400 600 800 1000,
+
+0 200
+Conll2003_Organization
+
+400 600 800 1000, 0
+
+200
+Alphabetically Last_5
+
+400 600-800
+
+1000
+
+jon Value Soft Head-Selection Value
+
+0200 400 + 600 800
+Sorted Attention Head Index
+
+1000
+
+— Optimized Values
+
+0200 400 + 600 800
+Sorted Attention Head Index
+
+==-+ Initial Value (0.5)
+
+1000 0
+
+200 400 600-800
+Sorted Attention Head Index
+
+1000
+
+Figure 10: Optimized values of soft head-selection parameters for six ICL tasks using Mixtral-
+8x7B-v0.1. Each plot shows the optimized values of the soft head-selection parameters for all 1024
+attention heads in Mixtral-8x7B-v0.1, sorted in descending order. Dashed lines indicate the initial
+value of 0.5 assigned to all selection parameters at the start of training.
+
+Ag_News
+
+Person-Instrument
+
+Capitalize _Last_Letter
+
+9 1000
+Choose_Middle_Of 5
+
+2000 3000 4000 5000
+
+0 1000
+Conll2003_Organization
+
+2000 3000 4000
+
+5000 0
+
+3000
+Alphabetically Last_5
+
+2000 3000 4000
+
+5000
+
+Soft Head-Selection Value Soft Head-Selection Value
+
+0 1000 2000 3000 4000
+Sorted Attention Head Index
+
+— Optimized Values
+
+5000 0
+
+1000 2000 3000 4000
+Sorted Attention Head Index
+
+==-» Initial Value (0.5)
+
+5000 0
+
+ooo 2000 3000 4000
+Sorted Attention Head Index
+
+5000
+
+Figure 11: Optimized values of soft head-selection parameters for six ICL tasks using Llama-
+
+3.1-70B. Each plot shows the optimize
+
+values of the soft head-selection parameters for all 5120
+
+attention heads in Llama-3.1-70B, sorted in descending order. Dashed lines indicate the initial value
+of 0.5 assigned to all selection parameters at the start of training.
+
+34
+
+C.3. TASK-WISE PERFORMANCE OF HARD INJECTION
+
+In this section, we present the task-wise performance of the hard injection variant described in
+evaluated across all 57 tasks using Llama-3.1-8B. Tabl presents the results in com-
+parison with our default soft injection method, as well as the 0-shot and 10-shot baselines. Note that
+the hard injection variant uses binary (0 or 1) head-selection parameters, obtained by thresholding
+the optimized soft head-selection parameters at 0.5.
+
+Table 25: Task-wise performance of the hard injection variant across 57 ICL tasks using
+Llama-3.1-8B. We compare the hard injection variant with our default soft injection method, as
+well as the 0-shot and 10-shot baselines. ‘Ours (Hard)’ denotes the hard injection variant described
+while ‘Ours’ refers to the default soft injection method. (a) Results on 29 abstractive
+tasks. (b) Results on 28 extractive tasks. The best results are shown in bold, and the second-best
+results are underlined.
+
+(a) Abstractive task results (b) Extractive task results
+Task Name 0-shot 10-shot Ours Ours (Hard) Task Name 0-shot 10-shot Ours Ours (Hard)
+AG.News 04 79.1 88.7 88.2 Adjective_V_Verb3 143 87.6 99.5 97.1
+Antonym 0.0 69.6 71.2 70.0 Adjective_V_Verb_5 9.1 84.8 98.1 94.3
+Capitalize 5.3 99.4 100.0 100.0 Alphabetically-First3 21.9 42.4 57.1 52.9
+Capitalize First_Letter 10.0 100.0 100.0 100.0 Alphabetically First.5 16.7. 18.6 90.5 84.8
+Capitalize_Last_Letter 12 24.0 93.0 87.7 Alphabetically Last_3 16.2. 36.2 47.6 46.2
+Capitalize Second Letter 1.2 285 97.0 97.0 Alphabetically -Last_5 10.5 23.3 44.3 39.1
+Commonsense_QA 40.3. 72.3. 62.7 61.8 Animal_V_Object_3 124 79.5 99.0 98.6
+Country-Capital 48 92.9 95.2 92.9 Animal_V_Object-5 19.1 81.0 98.1 98.1
+Country-Currency 0.0 78.6 81.0 81.0 Choose.First.Of.3 52.9 98.6 100.0 100.0
+English-French 0.5 81.7 817 81.2 Choose_First_Of_5 524 97.6 100.0 99.5
+English-German 12 75.5 69.3 68.2 Choose_Last_Of_3 10 97.6 100.0 100.0
+English-Spanish 02 84.1 83.1 82.9 Choose_Last_Of_5 3.8 94.3 100.0 100.0
+Landmark-Country 0.0 92.6 86.9 86.3 Choose_Middle_Of 3 29 524 99.0 98.6
+Lowercase_First_Letter 0.0 99.4 100.0 100.0 Choose_Middle_Of_5 43 33.3 90.0 83.8
+Lowercase_Last_Letter 0.0 39.8 96.5 94.7 Color_V_Animal_3 16.7 95.7 99.5 99.5
+National_Parks 0.0 86.3 81.1 811 Color_V-Animal_5 15.7 91.0 99.5 99.1
+Next_Capital_Letter 0.6 2.9 98.8 98.8 Concept_V_Object_3 143 83.8 99.5 99.1
+Next_Item 2.1 97.9 97.9 97.9 Concept_V -Object-5 17.6 83.3 93.8 91.9
+Park-Country 0.0 89.8 84.7 84.1 Conll2003_Location 218 87.7 943 93.4
+Person-Instrument 0.0 83.2 87.9 87.9 Conll2003_Organization 39.3. 77.5 914 90.6
+Person-Occupation 0.0 64.5 80.8 80.2 Conll2003_Person 124 917 973 96.4
+Person-Sport 0.0 95.5 97.0 97.0 Fruit_V_Animal_3 23.3 82.9 99.0 99.1
+Present-Past 3.3 100.0 100.0 98.4 Fruit-V Animal 5 100 791 995 976
+Prev_Item 2.1 97.9 97.9 97.9 Object_V_Concept-3 17.6 97.6 100.0 100.0
+Product-Company 0.0 87.2 88.1 88.1 Object.V_Concept_5 57 92.4 98.1 98.1
+Sentiment 0.0 95.1 96.3 96.3 Squad_Val 30.4 854 867 84.1
+Singular-Plural 2.3 100.0 100.0 97.7 Verb_V_Adjective 3 114 943 976 971
+Synonym 1.8 50.3. 53.0 51.2 anti, 9
+Word Length 00 386 825 819 Verb_V_Adjective_S 1.9 93.8 99.0 98.1
+9
+
+Average 27 761 88.0 872 Average 17.30 77.3 92.1 90.6
+
+35
+
+D_ ADDITIONAL RESULTS ON CROSS-TASK ANALYSIS
+
+In Table [26] we present the results of the cross-task analysis for 12 additional tasks using Llama-
+
+3.1-8B, following the procedure described in Section
+
+As explained there, cross-task analysis
+
+evaluates each evaluation task using its own task embedding (i.e., what to inject), while applying
+soft head-selection parameters (i.e., where to inject) derived from other injection tasks. We vary the
+injection task across all 57 tasks and report the top-3 and bottom-3 injection tasks based on accuracy.
+The overall trends are consistent with those reported in TableB]of Section[5.2]
+
+Table 26: Cross-task analysis for additional 12 evaluation tasks using Llama-3.1-8B. For each
+evaluation task, soft head-selection parameters are swapped with those from other tasks—changing
+where task information is injected, but not what is injected. The table reports the top-3 and bottom-3
+injection tasks based on accuracy, with task names and corresponding scores shown.
+
+Evaluation Task Task Description | Top-3 Injection Tasks (Ace %) | Bottom-3 Injection Tasks (Acc %)
+Select the adjective Adj _V_Verb_3 (99.5) Verb_V_Adj 3 (0.5)
+Adjective_V_Verb_3 from a list of 3 words Ad -V_Verb_5 (99.0) Verb_V_Adj 5 (7.6)
+
+(1 adjective, 2 verbs)
+
+Fruit_V_Animal_5 (89.0)
+
+Squad_Val (15.7)
+
+Verb_V_Adjective_3
+
+Select the verb
+from a list of 3 words
+(1 verb, 2 adjectives)
+
+Verb_V_Adjective_5 (99.5)
+Verb_V_Adjective_3 (97.6)
+Color_V_Animal_5 (80.5)
+
+Adjective_V_Verb_3 (0.5)
+Adjective_V_Verb_5 (4.8)
+Synonym (14.8)
+
+Alphabetically First_3
+
+Select the word that comes
+first in alphabetical order
+from a list of 3 words
+
+Alphabetically _First_S (86.7)
+Alphabetically _First_3 (57.1)
+Next_Item (45.2)
+
+Alphabetically Las
+Park-Country (24.8)
+
+5 (23.3)
+
+Alphabetically _Last_3
+
+Select the word that comes
+last in alphabetical order
+from a list of 3 words
+
+Alphabetically Last_5 (50.0)
+Alphabetically Last_3 (47.6)
+Park-Country (38.6)
+
+Concept.V_Object.3
+
+Select the concept from
+a list of 3 words (1 abstract
+concept, 2 concrete entities)
+
+Concept_V_Object.3 (99.5)
+Concept.V_O
+Animal_V_Object_5 (71.9)
+
+V_Concept_5 (0.5)
+“Concept_3 (2.9)
+English-French (13.8)
+
+Concept-V_Object-5
+
+Select the concept from
+a list of 5 words (1 abstract
+concept, 4 con entities)
+
+Concept_V _Object_3 (95.2)
+Concept_V_Object_5 (93.8)
+Animal_V_Object_5 (73.3)
+
+Concept_5 (2.4)
+_V Concept. (6.2
+Park-Country (6.7)
+
+Object_V_Concept.3
+
+Select the concrete entity from
+a list of 3 words (1 concrete
+entity, 2 abstract concepts)
+
+Object_V_Concept_3 (100.0)
+Object_V_Concept_5 (99.0)
+Color_V_Animal_3 (95.7)
+
+Concept_V_Object_3 (5.7)
+Concept_V _Object_5 (8.6)
+Squad_Val (15.2)
+
+Object_V_Concept_5
+
+Select the concrete entity from
+1 concrete
+entity, 4 abstract concepts)
+
+Object_V_Concept_S (98.1)
+Object_V_Concept_3 (96.2)
+Fruit_V_Animal_3 (92.4)
+
+Concept_V_Object_3 (3.3)
+Concept_V _Object_5 (3.8)
+Squad_Val (10.5)
+
+Capitalize_First_Letter
+
+Generate the first letter
+of a given word
+in captial form
+
+etter (100.0)
+‘irst_Letter (100.0)
+
+Capitalize (100.0)
+
+Choose _Middle_Of 3 (0.0)
+Conll2003 Organization (0.0)
+Person-Sport (0.0)
+
+Lowercase_First_Letter
+
+Generate the first letter
+of a given word
+in lowercase
+
+Conl12003 _Organization (0.0)
+Person-Sport (0.0)
+Next_Capital_Letter (0.6)
+
+Capitalize_Last_Letter
+
+Generate the last letter
+of a given word
+in captial form
+
+Capitalize_Last_Letter (93.0)
+Lowercase_Last_Lettter (86.0)
+Choose_Middle_Of_S (37.4)
+
+Choose_Middle_Of_3 (0.0)
+Choose First_Of_5 (0.0)
+Conll2003_Organization (0.6)
+
+Lowercase_Last_Letter
+
+Generate the last letter
+of a given word
+in lowercase
+
+e_Last_Letter (96.5)
+_Last_Letter (93.6)
+National _Parks (50.3)
+
+Conll2003_Organization (0.0)
+Conll2003_Location (0.0)
+Prev_Item (0.0)
+
+36
+
+E EXTENDED RESULTS ON HEAD-SELECTION TRAINING DYNAMICS
+
+E.1 FULL RESULTS FOR ALL 57 TASKS
+
+In this section, we present extended results of Figure|4]in Section|6] showing the training dynamics—
+validation loss and test accuracy curves—for all 57 tasks using Llama-3.1-8B. The full set of results
+
+is provided in Figures
+
+Ag_News Antonym Capitalize a
+= = 0.90 e
+2125 =
+rs g
+3 1.00 0.85 >
+c fa
+9 0.75 5
+B 0.80 3
+S oso <
+g a
+S 0.75 Ky
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 ©
+Capitalize_First_Letter Capitalize_Last_Letter Capitalize_Second_Letter a
+3 1.00 1.00 =
+a 3 =
+a 0.75 0.98 s
+gS >
+3 3 Fa
+5 0.50 0.96 s
+g Fe
+$ 0.25 094 1 <
+$ 0.00 0.92 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Commonsense_QA Country-Capital Country-Currency A
+ES 0.805
+rr 1.20 g
+Sias 0.70 fry
+s g
+= 1.10 0.60 5
+8 g
+= 105 =
+3” 0.504
+> ov
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+English-French English-German English-Spanish
+
+2150 0.80 =
+Fa S
+§1.25 0.75 >
+5 1.00 0.70 5
+8 g
+Z ozs 0.65 <
+g a
+> @
+
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400
+Landmark-Country Lowercase First_Letter Lowercase_Last_Letter ~
+= = = = = .00 —
+Zo9 =
+Fa S
+Ss 08 >
+5 07 8
+g Fe
+B06 g
+3 2
+Sos 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+National_Parks Next_Item Park-Country Aa
+08 = = 1.00 0.90 —
+S 04 =
+a 0.88 &
+8 06 S
+a o
+5 0.86 fd
+2 3
+ry o4 0.84 9
+2 <
+g 0.2 0.82 %
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+
+Training Iteration Training Iteration Training Iteration
+—* Ours - Validation Loss —= Ours - Test Accuracy ---- 10-shot Baseline - Test Accuracy
+
+Figure 12: Training dynamics of soft head-selection parameters for 57 ICL tasks (part 1 of 3).
+Validation loss (left y-axis) and test accuracy (right y-axis) are plotted over 400 training iterations.
+Dashed lines indicate the 10-shot baseline accuracies for reference. The results are based on Llama-
+3.1-8B. Plots for the remaining tasks are provided in Figure [13}14|
+
+37
+
+Person-Instrument 090 Person-Occupation Person-Sport
+
+~ 151 ~
+3 0.97 £
+g 125 0.88 x
+3 0.96 >
+g 1.00 0.86 fa
+2 5
+a 0.95 &
+gos 0.84 8
+$050 0.82 0.948
+oO 100 200 300 400 oO 100 200 300 400
+Present-Past Prev_Item Product-Company
+~ fesse SS 1.00 0.905
+2 =
+a 04 25 0.88 &
+Lj 0.80 >
+cal 2.0
+5 0.86 8
+5 0.2 a
+a 15 oO
+0.84
+3S 0.60 g
+& 1.0 a
+5 00 082 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Sentiment Singular-Plural Synonym ~
+= g
+a =
+4 >
+Fa fa
+2 5
+g Fe
+3 <
+s 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Word_Length Next_Capital_Letter Adjective_V_Verb_3 ~
+3 1.00 1.005
+a 0.75 &
+3 0.80 =
+§ 0.50 2
+S 5
+a 0.60 0
+3 0.25 g
+$s 0.00 0.40 8
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 ©
+Adjective_V_Verb_5 Alphabetically_First_3 Alphabetically_First_5 A
+= g
+a =
+cl 2
+< g
+S 3
+5 3
+3 <
+s 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 ©
+Alphabetically _Last_3 Alphabetically_Last_5 Animal_V_Object_3 a
+3 E
+a x
+a =
+cl 2
+c fa
+2 5
+8 Fe
+3 <
+s 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 ©
+Animal_V_Object_5 Choose_First_Of_3 Choose_First_Of_5 A
+3 1.005
+Pa x
+i} 0.90 >
+< s
+2 0.80 5
+3 <
+g 0.70 %
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Training Iteration Training Iteration Training Iteration
+—* Ours - Validation Loss —= Ours - Test Accuracy ---- 10-shot Baseline - Test Accuracy
+
+Figure 13: Training dynamics of soft head-selection parameters for 57 ICL tasks (part 2 of 3).
+This figure continues from Figure Validation loss (left y-axis) and test accuracy (right y-axis)
+are plotted over 400 training iterations. Dashed lines indicate the 10-shot baseline accuracies for
+reference. The results are based on Llama-3.1-8B. Plots for the remaining tasks are provided in
+
+38
+
+Choose_Last_Of_3 Choose_Last_Of_5 Choose_Middle_Of_3
+
+3 1.005
+3 0.80 S
+g 7
+Fa fa
+5 0.60 &
+S 5
+8 g
+2 0.40 <
+$ 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Choose_Middle_Of_5 Color_V_Animal_3 Color_V_Animal_5 A
+a 0.80 g
+a =
+i} >
+c 0.60 e
+S 3
+5 3
+$s 0.40 8
+s o20 %
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Concept_V_Object_3 Concept_V_Object_5 100 Conll2003_Location A
+3 , =
+wo x
+a =
+3 a
+c fa
+2 5
+g Fe
+2 g
+° é
+
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400
+Conll2003_ Organization Conll2003_ Person Fruit_V_Animal_3 ~
+= = 15 = a —
+= g
+a =
+4 >
+Fa fa
+2 5
+g Fe
+3 <
+s 3
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+Fruit_V_Animal_5 Object_V_Concept_3 Object_V_Concept_5 A
+S 1.00 £
+a x
+a =
+3 0.80 >
+< g
+g 3
+il 0.60 ¥
+2 g
+g Py
+> 0.40 a
+
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400
+Squad_Val Verb_V_Adjective_3 Verb_V_Adjective_5 a
+> = = = 2.0 — = 1.00 5
+2175 =
+Fa S
+0.80
+Ss 1.50 >
+< s
+gis 0.60 5
+© 1.00 g
+Bl <
+$ 075 040%
+oO 100 200 300 400 oO 100 200 300 400 oO 100 200 300 400 r
+
+Training Iteration Training Iteration Training Iteration
+—*— Ours - Validation Loss —=— Ours - Test Accuracy ---- 10-shot Baseline - Test Accuracy
+
+Figure 14: Training dynamics of soft head-selection parameters for 57 ICL tasks (part 3 of
+3). This figure concludes the series from Figures Validation loss (left y-axis) and test accu-
+racy (right y-axis) are plotted over 400 training iterations. Dashed lines indicate the 10-shot baseline
+accuracies for reference. The results are based on Llama-3.1-8B.
+
+39
+
+E.2 RESULTS WITH LARGER LANGUAGE MODELS
+
+Figures present training dynamics for larger models—-Qwen3-32B, Mixtral-8x7B-v0.1, and
+Llama-3.1-70B-—across six selected tasks. The resulting plots exhibit consistent overall trends, simi-
+lar to those observed with Llama-3.1-8B in Section|6]
+
+~ Ag_News Person-Instrument Capitalize Last_Letter 2
+3, S
+ra g
+g >
+51 8
+2 <
+= "9 100 200° 300° 400 0 100 200 «300 400 0 100 200 300 400
+_ __Choose_Middle Of 5 Conll2003_Organization Alphabetically Last_5 2
+3 3 £
+re) g
+8 Fs
+3? &
+5 §
+22 g
+2 <
+go %
+
+0 100 200 300 400 0 100 200 «300» 400 0 100 200 300 © 400 2
+
+Training Iteration Training Iteration Training Iteration
+—* Ours - Validation Loss —= Ours - Test Accuracy ---- 10-shot Baseline - Test Accuracy
+
+Figure 15: Training dynamics of soft head-selection parameters for six ICL tasks using Qwen3-
+32B. Validation loss (left y-axis) and test accuracy (right y-axis) are plotted over 400 training itera-
+
+tions. Da _ Ag_News Person-Instrument Capitalize Last_Letter =
+810 >
+§ s
+3 05 g
+S& D0 260° 300400 ¢ ©4100 200°~«300+=«00 0 100 200 300 400 «|
+__Choose_Middle_Of_5 Conll2003_Organization Alphabetically Last =
+sj z
+§ s
+see") as0 20300400 ¢ 100 200° 300+ 400 6 100 200 300 400 «8
+Training Iteration Training Iteration Training Iteration
+—* Ours - Validation Loss —=— Ours - Test Accuracy ---- 10-shot Baseline - Test Accuracy
+
+Figure 16: Training dynamics of soft head-selection parameters for six ICL tasks using
+Mixtral-8x7B-v0.1. Validation loss (left y-axis) and test accuracy (right y-axis) are plotted over
+
+400 train _ Ag_News Person-Instrument Capitalize Last Letter 2
+F20 £
+= &
+Bis =
+510 2
+Bos g
+= 9 100 «200° «300-400 o 100° 200 300 400 0 100 200 300 400 86
+
+=, _Choose_Middle_Of 5 Conll2003_Organization oo, Alphabetically Last_5 2
+ra &
+& >
+el &
+5 §
+3 <
+s° %
+
+0 100 200 300 400 0 100 200 300 400 0 100 200 300 400 ©
+
+Training Iteration Training Iteration Training Iteration
+—* Ours - Validation Loss —=— Ours - Test Accuracy ---- 10-shot Baseline - Test Accuracy
+
+Figure 17: Training dynamics of soft head-selection parameters for six ICL tasks using Llama-
+3.1-70B. Validation loss (left y-axis) and test accuracy (right y-axis) are plotted over 400 training
+iterations. Dashed lines indicate the 10-shot baseline accuracies for reference.
+
+40
+

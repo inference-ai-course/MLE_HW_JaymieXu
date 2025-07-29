@@ -1,0 +1,1319 @@
+arXi1v:2507.20956v1 [cs.CL] 28 Jul 2025
+
+Mind the Gap: Conformative Decoding to Improve Output Diversity of
+Instruction-Tuned Large Language Models
+
+Max Peeperkorn
+School of Computing
+University of Kent
+m.peeperkorn@kent.ac.uk
+
+Dan Brown
+Cheriton School of Computer Science
+University of Waterloo
+dan.brown@waterloo.ca
+
+Abstract
+
+Instruction-tuning large language models
+(LLMs) reduces the diversity of their outputs,
+which has implications for many tasks, particu-
+larly for creative tasks. This paper investigates
+the “diversity gap” for a writing prompt nar-
+rative generation task. This gap emerges as
+measured by current diversity metrics for vari-
+ous open-weight and open-source LLMs. The
+results show significant decreases in diversity
+due to instruction-tuning. We explore the diver-
+sity loss at each fine-tuning stage for the OLMo
+and OLMo 2 models to further understand how
+output diversity is affected. The results indi-
+cate that DPO has the most substantial impact
+on diversity. Motivated by these findings, we
+present a new decoding strategy, conformative
+decoding, which guides an instruct model us-
+ing its more diverse base model to reintroduce
+output diversity. We show that conformative
+decoding typically increases diversity and even
+maintains or improves quality.
+
+1 Introduction
+
+Instruction-tuned large language models (LLMs)
+have been shown to produce less diverse outputs
+than their base models (Hiamiiliainen et al., 2023;
+Le Bronnec et al., 2024; Kirk et al., 2024; Chu
+et al., 2024). The instruct model may have a bias
+towards certain answers or topics: For example,
+prompting an LLM to write about an “evil empire”
+may disproportionally generate outputs related to
+Star Wars, but following instructions and engaging
+in conversation is an extremely useful application
+of LLM. Conversely, the base model can only rely
+on pre-existing token patterns in the training data
+to generate an output of the desired artefact class.
+Few-shot prompting (Brown et al., 2020) can push
+the base model to more consistent behaviour but
+
+Tom Kouwenhoven
+
+Leiden Institute of Advanced Computer Science
+
+Universiteit Leiden
+t.kouwenhoven@liacs. leidenuniv.nl
+
+Anna Jordanous
+School of Computing
+University of Kent
+a.k. jordanous@kent.ac.uk
+
+requires a specific (diverse) set of examples. How-
+ever, such a set of the target artefact class may not
+be available, or the user may not know what they
+are looking for.
+
+Output diversity is a desired characteristic of
+LLMs and other generative models (Tevet and Be-
+rant, 2021). This is not limited to mundane in-
+teractions, such as “Any tips for things to do in
+Edinburgh?”, but also for more complex or creative
+tasks, such as narrative generation. It is valuable
+for an LLM to respond in different ways, not only
+to avoid repetitiveness in conversations but also to
+enable (creative) exploration. Diversity (as vari-
+ety, divergence, and experimentation) is considered
+a key component of creativity identified by Jor-
+danous and Keller (2016) in an analysis of relevant
+academic literature spanning over sixty years. Hav-
+ing a diverse set of options enables consideration
+of multiple perspectives before selecting the most
+suitable output (Grace and Maher, 2016; Ibarrola
+and Grace, 2024). Experiments also suggest that
+humans collaboratively writing with LLMs leads
+to reduced diversity in the produced content (Pad-
+makumar and He, 2024). The loss of diversity due
+to instruction-tuning might have implications in
+applications such as agent-based simulations (e.g.,
+Park et al., 2023), employing the LLM-as-a-judge
+(e.g., Goes et al., 2022), or when inducing person-
+alities (Jiang et al., 2023b), but also for generating
+synthetic instruction-tuning datasets for training
+other LLMs.
+
+In this paper, we investigate and verify that
+instruction-tuning reduces the output diversity of
+various open-source and open-weight LLMs when
+applied to an open-ended narrative generation task.
+Specifically, we look at OLMo 0724 7B (Groen-
+eveld et al., 2024) and OLMo 2 7B 1124 (Team
+
+OLMo et al., 2025) more in-depth and show the
+“diversity gap” can be attributed to different stages
+of preference tuning. Motivated by our findings,
+we propose conformative decoding, a strategy de-
+signed to reintroduce diversity by attenuating the
+instruct model using its more diverse base model,
+thus allowing the usefulness of instruction-tuned
+LLMs while enabling more diverse outputs.
+The key contributions are:
+
+1. Through narrative generation tasks, we
+demonstrate the existence of a diversity gap
+due to instruction-tuning in five LLMs.
+
+2. We show that DPO (Rafailov et al., 2023) is
+primarily responsible for the diversity gap, as
+it considerably reduces the output diversity
+across the generated narratives.
+
+3. Finally, we present conformative decoding, a
+method to reintroduce output diversity. Our
+results show significant improvements while
+maintaining quality.
+
+2 Background
+
+Diversity in generative AI outputs is receiving more
+attention, especially on evaluation of the diversity
+of their outputs (e.g., Pillutla et al., 2023; Le Bron-
+nec et al., 2024). For LLMs, there are various
+methods and decoding strategies to make them into
+more diverse generators (e.g., Vijayakumar et al.,
+2018; Holtzman et al., 2020; Li et al., 2023). In
+this section, we discuss what diversity is, how to
+measure it, and review efforts to make LLMs more
+diverse.
+
+2.1 What is diversity?
+
+Diversity is a complex and dynamic concept. It
+has different meanings in different research areas
+shaped by the goals and challenges. Generally, di-
+versity represents the presence of differences or va-
+riety in some context along some dimension. More
+strictly, diversity is a quality observed in a set of ob-
+jects; a single entity cannot be considered diverse.
+
+One view of diversity based on entropy is used
+in ecology to quantify biodiversity (Leinster, 2021).
+A population is diverse because it has a wide range
+of varieties. Language is typically concerned with
+two kinds of diversity: lexical diversity and seman-
+tic diversity. The former is more about style or
+form, while the latter is about content. Diversity
+plays an important role in creative domains (Jor-
+danous and Keller, 2016); for example, if a band is
+
+known for its diverse music, it means their songs
+are not confined to a single genre. In information
+retrieval, diversity is studied specifically for recom-
+mender systems, which is necessary to satisfy users.
+However, users do not always desire the same kind
+of diversity; some may want diversity within genre,
+and others may want to explore beyond familiar
+genres (Robinson et al., 2020).
+
+When is a generative AI model diverse? Usu-
+ally, when a model produces a broad and diverse
+set of outputs, it is more useful in different kinds
+of situations. A model that only generates im-
+ages or texts in the same style or recommends
+the same songs again and again, is not very di-
+verse or useful. Another view is that diversity
+could be about representational diversity. This
+line of research investigates how generative models
+depict minority groups (Shihadeh and Ackerman,
+2023a; Ackerman and Brown, 2024) or associate
+certain human characteristics with a certain demo-
+graphic (Fraser et al., 2023; Shihadeh and Acker-
+man, 2023b). While we highly appreciate the valu-
+able work being done on representation diversity,
+this paper focuses on linguistic diversity.
+
+2.2 Measuring Quality and Diversity
+
+Quality and diversity are two key criteria for assess-
+ing the creativity of outputs (Jordanous and Keller,
+2016; Ibarrola and Grace, 2024), and usually, there
+is a trade-off between the two (Le Bronnec et al.,
+2024). Models not only need to generate good out-
+puts, but they must also produce a wide variety to
+be meaningfully integrated into the creative work-
+flow, for example, generating many samples from
+a single prompt for exploration.
+
+Evaluating generative AI models focuses on the
+same two axes: quality and diversity. The metrics
+generally require embedding the generated arte-
+facts in a latent space. A common way to measure
+quality is to use the Fréchet distance using the latent
+space of another model. For example, the Fréchet
+Inception Distance (FID) for measuring image qual-
+ity uses the latent space of the InceptionV3 model
+(Heusel et al., 2017). Another method designed
+for assessing quality and diversity in generative
+models, respectively, is Precision and Recall using
+distributions (Sajjadi et al., 2018). The Improved
+Precision and Recall (Kynkaanniemi et al., 2019)
+metric works by drawing a hypersphere at each data
+point with a radius up to its k-th nearest neighbour
+to estimate manifolds for the generated samples
+P, and human reference P,.. Precision is the prob-
+
+ability that a point in P, falls within the support
+of P,., and vice versa for Recall. MAUVE (Pillutla
+et al., 2021) is a measure specifically designed for
+text, which also compares a generated and a ground
+truth distribution using KL divergence in a quan-
+tised embedding space. Pimentel et al. (2023) and
+Pillutla et al. (2023) have shown that MAUVE is
+an effective way to evaluate text. While MAUVE
+is designed to capture both quality and diversity,
+it cannot disentangle them. Low MAUVE scores
+could both be due to the lack of variety (e.g. repet-
+itiveness, limited vocabulary) or poor quality (i.e.
+badly constructed sentences, wide vocabulary).
+Approaches focussing specifically on measuring
+diversity have received less emphasis than those
+that measure quality. As mentioned, Recall is
+most commonly used to assess diversity. How-
+ever, having a human reference that is considered
+diverse is essential so that if we have good cov-
+erage of the generated samples, they must also be
+diverse. This approach is taken by Hamilainen et al.
+(2023) and Le Bronnec et al. (2024) to conclude
+that instruction-tuning lowers output diversity.
+The metrics mentioned earlier all have two sig-
+nificant limitations. First, they all require a large
+sample size to get reasonable results. Secondly,
+they require ground-truth data. In reality, we of-
+ten want to evaluate small sets of generated sam-
+ples, and obtaining a ground truth is usually dif-
+ficult. Two measures designed for diversity that
+do not have these drawbacks are the Vendi Score
+(Friedman and Dieng, 2023) and Truncated En-
+tropy (Ibarrola et al., 2024). Both metrics take an
+entropic view of diversity, but each takes a different
+approach. The Vendi Score is defined (Equation 1)
+as the exponential entropy of the eigenvalues A of
+similarity matrix K/N where K ¢ R‘*%. The
+similarity function k : Y x & — R computes K
+requiring k(x,a) = land k(x, y) = k(y, 2).
+
+VSi(X )sen(-¥ yn te) dd)
+
+Truncated Entropy was originally introduced as
+Truncated Inception Entropy as it relies on Incep-
+tionV3 to measure image diversity. Following the
+naming convention of FID, it similarly assumes nor-
+mally distributed data. The metric is based on the
+differential entropy of a multivariate normal distri-
+bution. As Ibarrola et al. (2024) note that empirical
+approximation S of covariance matrix © is singu-
+lar and its determinant zero, when the number of
+
+samples N is less than the dimensions of the latent
+space, making it infeasible for computing diversity
+for small sets of artefacts. Instead, they proposed
+to truncate differential entropy (Equation 2) and
+consider only the set of NV largest eigenvalues of 33
+to make computation feasible, where / denotes the
+latent space which embeds the artefacts. Originally
+designed to measure image diversity, its extension
+to CLIP included an experiment into text diversity
+(Ibarrola and Grace, 2024).
+
+N
+TE,(X) £ > losl (27e)
+
+>> log 6” (2)
+
+A benefit of the Vendi Score is that it allows dif-
+ferent similarity kernel functions k to assess the de-
+sired flavour of diversity. Moreover, it is bounded
+between | and N, making it more natural to inter-
+pret, while Truncated Entropy is not bounded and
+can be negative due to small eigenvalues.
+
+The above metrics all require some embedding
+ina latent space. Other metrics that measure quality
+and diversity and which do not use text embedding
+features are perplexity and Zipf’s Law (Zipf, 1949)
+for quality, and n-gram diversity (Li et al., 2016).
+However, perplexity is not a good measure for text
+quality (Nadeem et al., 2020; Pillutla et al., 2021),
+and the Zipf Coefficient is more a measure of close-
+ness to natural language than quality per se. While
+n-gram diversity is a standard diversity measure,
+it has some drawbacks. If the sequences are of
+different lengths, the diversity of a set can be over-
+estimated if it contains longer sequences with many
+unique words and conversely underestimated for
+short sequences with many repeating occurrences
+(Friedman and Dieng, 2023).
+
+2.3 Improving the Output Diversity of LLMs
+
+Efforts to improve the output diversity of LLMs
+typically focus on decoding strategies. Decoding
+is the process of sampling a token from the next-
+token probability distribution given by the LLM on
+input. These strategies are generally divided into
+two flavours: sampling and search-based methods.
+
+Temperature sampling is the easiest method to
+increase output diversity, where increasing the tem-
+perature hyperparameter flattens the sampling dis-
+tribution, but at the cost of quality (Peeperkorn
+et al., 2024). Often, temperature sampling needs to
+be complemented with a truncation strategy such
+as top-k (Fan et al., 2018) or nucleus sampling
+(Holtzman et al., 2020) to prevent or at least reduce
+
+the risk of producing degenerate outputs. The lat-
+ter strategy, nucleus sampling, is interesting as it
+produces good quality text that is on par with diver-
+sity in human texts (Holtzman et al., 2020). Other
+sampling strategies perform similarly, as measured
+using n-gram diversity, with temperature sampling
+scoring best (Meister et al., 2023). Sampling decod-
+ing strategies generally do not focus specifically on
+optimising output diversity.
+
+Search-based methods use beam search (often
+combined with a sampling strategy) to track multi-
+ple candidates and score them based on probability
+over multiple steps. The goal is to find good se-
+quences with a high but “hidden” probability that
+might be missed when decoding using sampling
+only. An effective search-based method that yields
+more diverse sequences is Diverse Beam Search
+(DBS; Vijayakumar et al., 2018). DBS considers
+a fixed number of groups of beams, each group
+lagging one timestep behind the previous group.
+The objective function combines the joint probabil-
+ity of beams and the dissimilarity between groups
+of beams at each step. This results in more di-
+verse outputs compared to standard beam search.
+Contrastive Decoding (Li et al., 2023) is another
+search-based strategy that uses an objective where
+a larger model (expert) is penalised by a smaller
+model (amateur) to prevent the expert from follow-
+ing bad language patterns learned by the amateur.
+Contrastive Decoding leads to more diverse out-
+puts than other search-based methods but is less
+effective than nucleus sampling (Li et al., 2023).
+Search can increase output diversity but at a higher
+cost compared to sampling.
+
+Another approach is to optimise the diversity of
+the output informed by multiple models using an
+ensemble of LLMs (Tekin et al., 2024). Depending
+on the input, this method selects a sub-ensemble
+out of a large ensemble of LLMs that is likely to
+yield a diverse output. Subsequently, the probabil-
+ity distributions of the sub-ensemble are combined
+but require an ensemble learner (another neural
+network) to yield diverse outputs. Finally, there
+are prompt-based approaches to increase diversity
+in various domains (Chu et al., 2024; Chen et al.,
+2025), but these are model- (and task-) specific,
+while we focus on a model-agnostic approach.
+
+3 The Diversity Gap: Does
+Instruction-tuning Reduce LLM
+Output Diversity?
+
+Previous work observed that instruction-tuning
+lead models to yield less diverse outputs (Hamilai-
+nen et al., 2023; Le Bronnec et al., 2024; Kirk et al.,
+2024; Chu et al., 2024). In this section, we investi-
+gate the existence of a “‘diversity gap” for various
+small LLMs performing a narrative generation task.
+We explore the extent of the diversity gap using
+various diversity metrics, the impact of different
+fine-tuning steps on diversity, and the impact of
+conversation templates. These experiments moti-
+vate our decoding strategy presented in section 4,
+which aims to reintroduce some lost diversity in
+instruct models.
+
+3.1 Experimental Setup
+3.1.1 Narrative Generation Task and Data
+
+The task in this paper is based on the concept of
+a writing prompt, a short statement or question,
+which is designed to spark and inspire a writer’s
+creativity. The r/WritingPrompts subreddit is a
+space designed to foster creative writing and pro-
+ductivity. People post a short premise of a story
+they want to see written. In the comments, other
+people supply stories in response. We put this task
+to the LLMs and evaluate their performance in di-
+versity and quality.
+
+However, since LLMs entered the scene, it has
+become increasingly difficult to find sources of data
+untouched by LLM-generated data. This is prob-
+lematic since many quality and diversity metrics
+rely on a human reference. Fortunately, the Writ-
+ing Prompts dataset (Fan et al., 2018) was com-
+piled using prompts and stories from the subreddit
+before the widespread adoption of LLMs, provid-
+ing a solid ground truth for our experiments. We
+use a subset of the Writing Prompts dataset since
+we need sufficient human stories for each writing
+prompt to assess diversity. Specifically, we selected
+all prompts from the training data that have at least
+50 human responses. We manually filtered the
+prompts that were inappropriate or offensive (see
+Appendix C) and the responses that start with com-
+mentary of some sort (e.g., “This is my first post”,
+or “Feedback welcome.”). We kept the first 50
+human responses for each writing prompt, giving
+a total of 53 prompts and 2650 human responses.
+Since the Writing Prompts dataset is considered
+diverse (Fan et al., 2018), we use our subset as
+
+OLMo-2-1124-7B
+
+4. Meta-Llama-3,1-8B
+Mistral-7B-v0.3
+
+gemma-2-9b
+“ OLMo-7B-0724-ht
+
+(b) Metrics across-prompts
+
+Figure 1: We compare the base and instruct models for
+both prompts, comp and chat, on the narrative gener-
+ation task. Figure la shows a drop in diversity for all
+metrics for each model (p < .001). The chat template
+typically further reduces output diversity. In Figure 1b,
+MAUVE and Recall further show that instruction tuning
+reduces output diversity while precision increases, sug-
+gesting a trade-off between quality and diversity. Error
+bars represent the 0.5 percentile interval.
+
+ground truth in metrics when required.
+
+3.1.2 Prompting and Incipits
+
+Base and instruct models require different prompts
+to perform a task, therefore, we have a text
+completion prompt and a conversation prompt
+(Prompt 3.1). The base models are always
+prompted such that their natural response is to com-
+plete a story, denoted as (comp). In the case of in-
+struct models, we either use the completion prompt
+or prompt using the conversation template, denoted
+as (chat). Allowing us to deepen our understanding
+of the difference in diversity between a completion
+and a conversation prompt for instruct models. To
+this end, we must ensure consistent behaviour be-
+tween the base and instruct models, i.e., they must
+generate outputs of the correct artefact class: sto-
+ries. Instruct models using the conversation prompt
+have no problem performing the task. Generating
+stories using the completion prompt is much harder,
+especially for base models, which often output de-
+generate, repetitive text or items that are not a story.
+To alleviate this unwanted behaviour, we use incip-
+its of the human stories in the dataset to naturally
+
+Writing prompt: [WP]
+
+The story is as follows: [incipit]
+
+Prompt 3.1: The exact prompt for text completion, [WP]
+and [incipit] are replaced with the writing prompt
+and the first 20 tokens of a human response, respectively.
+In the conversation prompt, we replace “The story is
+as follows: ” with the instruction “Write a story” and
+apply the model-specific chat template, leaving the rest,
+including the incipit, unchanged.
+
+guide the models into their completion “umwelt”
+(its model of the world). These incipits introduce
+a bit of diversity but ensure the models properly
+perform the task on both prompts. The incipit size
+is 20 tokens. For consistency, we use the tiktoken
+library with the 0200k_base encoding to truncate
+the human responses into incipits for all models.
+Few-shot prompting (Brown et al., 2020) is beyond
+the scope of this paper, as it introduces much nat-
+ural variation, making comparison difficult. The
+completion and conversation naturally have some
+differences, but we aim for the prompts to be as
+simple and similar as possible.
+
+3.1.3 Models
+
+For practical reasons, we focus our experiments on
+smaller open-weights and open-source models. In
+particular, we look at Gemma 2 9B (Team et al.,
+2024), Meta Llama 3.1 8B (Grattafiori et al., 2024),
+Mistral 7B v0.3 (Jiang et al., 2023a), OLMo 7B
+0724, and OLMo 2 1124 7B. The OLMo fami-
+lies are fully open-source and provide intermediate
+checkpoints of each fine-tuning step, giving the
+opportunity to see how much diversity is lost in
+the Supervised Fine-tuning (SFT), Direct Prefer-
+ence Optimisation (DPO; Rafailov et al., 2023),
+and Reinforcement Learning with Verifiable Re-
+wards (RLVR; Lambert et al., 2025) steps. As such,
+we run experiments to investigate the OLMo mod-
+els in further detail. For all experiments, we use
+nucleus sampling (p = .95) with temperature ¢ = 1.
+For each writing prompt in the Writing Prompts
+subset and each configuration: Base (comp), In-
+struct (comp) and Instruct (chat), we generate 50
+samples using 50 incipits, up to a maximum of 500
+tokens per story.
+
+3.1.4 Evaluation Metrics
+
+We evaluate the generated text using a range of
+quality and diversity metrics (lexical and seman-
+tic). To measure lexical diversity, we use the
+
+Vendi Score (Equation 1) with n-gram counts for
+n € {1,2,3,4} as features to compute the simi-
+larity matrix, denoted as VS,sram. For semantic
+diversity, we use the Vendi Score and Truncated
+Entropy (Equation 2) applied to text embeddings
+(see below), denoted as VSjina and TEjina, respec-
+tively. We use raw text embeddings for TEjina as
+normalised features yielded unintuitive results.
+
+We use Improved Precision and Recall
+(Kynkaanniemi et al., 2019) using k = 3 to com-
+pute Precision and Recall as quality and diversity
+metrics, respectively. High precision suggests real-
+istic and accurate generated texts, while high Re-
+call suggests good coverage of the ground-truth
+reference, implying high diversity. We evaluate
+the stories using MAUVE with the default settings
+and follow best practices'. We use the embedding
+model mentioned below to compute the text fea-
+tures instead of the default GPT2-large, as better
+embedding models generally lead to better results.
+Note that we compute both MAUVE and Improved
+Precision and Recall across all prompts since these
+methods require many samples to give an accu-
+rate measurement. The Vendi Score and Truncated
+Entropy are applied on a per-prompt basis.
+
+To obtain the text embedding features, we use
+the jinaai/jina-embeddings-v3 model (Sturua
+et al., 2024). This embedding model is the high-
+est scoring? model on Semantic Textual Similarity
+(STS) task and on average on the MTEB bench-
+mark (Muennighoff et al., 2023) making this a suit-
+able embedding model for our purpose.
+
+Finally, we use a one-tailed paired t-test to test
+statistical significance for the VSjina, VSn-gram, and
+TEjina results, with the hypothesis that the mean
+diversity of the base model is greater than that of
+the instruct model. We compare the Base (comp)
+against the Instruct (comp) and Instruct (chat). Fi-
+nally, to measure the effect of the chat template, we
+test the Instruct (comp) against Instruct (chat).
+
+3.2. Results for Diversity Gap Experiments
+
+Does the diversity gap exist? Figure 1a shows
+that along the VSjina, VSn-gram, and TEjina, there
+is a significant drop in diversity for outputs gener-
+ated by instruct models (p < .001 for all compar-
+isons). The diversity gap is also reflected in the
+Recall scores with a clear drop. On the other hand,
+
+'See https: //github.com/krishnap25/Mauve?tab=
+readme-ov-file#best-practices-for-Mauve
+
+7 At the time of writing, accessed on 13 January 2025 at
+https: //huggingface.co/spaces/mteb/leaderboard
+
+. wld ”
+
+z WH 4 ¥ 280
+£10 ‘ £10 tHE |
+2 K, d E
+i } i; FT as :
+8 = | i i 8 +
+5 I al 5 70 Bs
+post SET pPO gyyR post SET ppO gk pase SFT pO give
+(a) Metrics per-prompt
+10 10 10
+4 * #
+
+08 * 08 er
+
+0.6 . 0.6 0.6
+
+ecall
+
+04
+
+R
+Re
+
+Precision
+
+Mauve >
+
+02
+
+02
+
+0.0 0.0 0.0
+
+pee sFT pPO vk pst SFT pPO yyy pot SFT pO vt
+
++ OLMo 7B 0724 (comp) a
+OLMo 7B 0724 (chat)
+
+OLMo 2.1124 (comp)
+OLMo 2 1124 (char)
+
+(b) Metrics across-prompts
+
+Figure 2: This figure presents experiments that investi-
+gate how diversity is lost with each fine-tuning step for
+OLMo 0724 7B and OLMo 2 7B 1124. Figure 2a shows
+an increasing decline in diversity with each step. In
+Figure 2b, there is a steep drop for the DPO models as
+measured by MAUVE, and Recall suggests that reward-
+based fine-tuning has a particularly negative effect on
+output diversity. Error bars represent the 0.5 percentile
+interval.
+
+Precision improves (Figure 1b), suggesting that the
+generator is better at producing realistic outputs.
+This shows that the generated text fits well within
+the reference manifold. However, the decline in
+Recall shows that fewer reference texts fall within
+the generated manifold, indicating that instruction-
+tuning is a trade-off between quality and diversity.
+The MAUVE scores for the base models are high,
+demonstrating a good balance of high quality and
+high output diversity. This may be expected since
+the Writing Prompt dataset could easily be part of
+the training mix for any of these LLMs. However,
+the other diversity scores for the instruct models are
+much lower (Figure 1a), especially for the conver-
+sation prompt, suggesting that the drop for MAUVE
+is likely to be due to the generator producing many
+similar outputs. Overall, the results in Figure |
+clearly show that instruction-tuning reduces the
+output diversity of LLMs.
+
+What is the impact of each fine-tuning step?
+To further strengthen the findings above, the in-
+depth experiments for OLMo 0724 7B and OLMo
+2 7B 1124 show that both SFT and DPO impact the
+
+output diversity of the model but that the new fine-
+tuning step, RLVR, has little effect, as shown in
+Figure 2. Recall and MAUVE Figure 2 reveals that
+DPO has a much stronger effect than SFT, showing
+that reward modelling according to human prefer-
+ence has a particularly negative effect on LLM out-
+put diversity. Moreover, the Precision and Recall
+results hint that generated texts constitute a much
+smaller manifold than the reference due to DPO;
+they suggest a direction for future investigation.
+
+What is the impact of conversation templates?
+Prompting the instruct models using the conversa-
+tion prompt further pushes the model into a narrow
+output space, as it yields lower scores on diversity
+and quality compared to the completion prompt
+(p < .01 for all comparisons, except VSy,-gram for
+Llama 3.1 8B). This is expected as the chat tem-
+plate is part of training, and using the completion
+prompt on instruct models is less restrictive.
+
+4 Conformative Decoding
+
+Motivated by the existence of the diversity gap, we
+present a sampling decoding strategy that aims to
+reintroduce some diversity in the outputs of instruct
+models. The idea is that we can use base models
+to inform the instruct models and enable higher
+diversity while leveraging the usefulness and pro-
+ductivity of the instruction following models.
+
+4.1 Decoding Strategy
+
+Our sampling decoding strategy is a weighted sum
+to push the instruct model to conform to its more
+diverse base model (Equation 3). Hence, we call
+our strategy conformative decoding. It is essential
+that conformative decoding is used in combination
+with a truncation strategy, such as top-k (Fan et al.,
+2018), nucleus sampling (Holtzman et al., 2020),
+or another truncation method, to mitigate the Soft-
+max bottleneck (Yang et al., 2018). Conformative
+decoding is applied to the truncated probability dis-
+tribution of the instruct model. Initial explorations
+showed a greater increase of diversity applied be-
+fore truncation, but this often results in low-quality
+outputs. Applying the mixture after truncation is
+conceptually more elegant and increases diversity
+only when the instruct model provides room. This
+prevents the degenerate outputs while reducing the
+magnitude of the conforming effect. We note, how-
+ever, that truncation should not be too restrictive if
+aiming for diversity.
+
+Lo Lo 1.0
+
+0.8 ed 0.8
+
+MAUVE
+
+0.0
+B A B
+Mistral-7B-Instruct-v0.3
+Mota-Llama-3,1-8B-Instruct
+
+(b) Metrics across-prompts
+
+Figure 3: This figure shows automatic evaluations for
+configuration A (nucleus sampling using p = 0.95) and
+configuration B (nucleus sampling with conformative
+decoding using p = 0.95 and y = 0.5). Figure 3a shows
+that conformative decoding improves output diversity
+for all models (p < .001), except for Meta Llama 3.1 8B.
+In Figure 3b, MAUVE and Recall also show increased
+diversity, while quality is maintained as indicated by
+Precision, and even slightly improves. Error bars repre-
+sent the 0.5 percentile interval.
+
+ConformativeDecoding(z; | ve,) =
+ylog po(xt | ver) + (1 — 7) log po(xe | <r)
+for xt € Vyatia (3)
+
+where 0 are the parameters of the instruct model,
+and ¢ the parameters of its base model, ¥ is a hy-
+perparameter to control the mix of the two models,
+and Vyaliq is the set of valid tokens according to
+the chosen truncation strategy. In this work, we use
+nucleus sampling with p = .95 where Vyalia is the
+minimal set that covers at least 95% of the prob-
+ability mass. The log probability for x; ¢ Vyalia
+are set to —oo, meaning they are not considered
+in the sampling process. In practice, we apply the
+mixture using logits directly for efficiency, which
+is equivalent after further Softmax normalisation.
+
+4.2 Experiment Setup
+
+The experiment in this section investigates if con-
+formative decoding improves the diversity of in-
+struct LLMs. They are conducted using an iden-
+
+tical setup as described in section 3, except we
+investigate if our method improves diversity while
+maintaining quality compared to a baseline. We
+use the conversation template for the prompt and
+evaluate the outputs using the same metrics, along
+with the incipit, to accurately align the base model’s
+“umwelt” with the task. We apply two configura-
+tions to the same narrative generation task. Con-
+figuration A is the baseline using nucleus sam-
+pling (p = .95), and configuration B uses nucleus
+sampling with conformative decoding (p = .95,
+y = .5). We choose y = .5 as this is a neutral
+value; higher 7 would increase diversity and vice
+versa, but we leave further hyperparameter tuning
+for future work. Finally, to test significance we use
+a one-tailed paired t-test with the hypothesis that
+the baseline has a lower mean diversity than our
+method.
+
+4.3, Results for Conformative Decoding
+
+The hypothesis for these experiments is that, by
+having the instruct model conform to the base
+model, we reintroduce diversity in the LLM’s out-
+puts. The result in Figure 3a shows that for VSjina.
+VSn-gram, and TEjina, except for Llama 3.1 8B, we
+see significant increases in diversity for all mod-
+els (p < .001). Llama 3.1 8B even measures a
+significant decline on VSp-gram (p < 001), but in-
+terestingly, across-prompts, we see a recovery of
+diversity and even a slight increase in quality.
+
+The across-prompt metrics all have a significant
+increase for each model. Figure 3b shows that our
+method improves diversity and maintains Preci-
+sion. Overall, the improvements are significant but
+modest; however, this is not unexpected since we
+truncate the next-token distribution according to
+the instruct model, which still influences the gener-
+ation process. A less restrictive truncation strategy
+naturally introduces more diversity at the cost of
+quality.
+
+5 Discussion
+
+The result of the diversity gap experiments pro-
+vides additional evidence to the diversity gap be-
+tween base and instruct models previously identi-
+fied by Hamilainen et al. (2023); Kirk et al. (2024);
+Le Bronnec et al. (2024); Chu et al. (2024). Our
+work explores this issue explicitly in the creative
+domain of narrative generation. The automatic eval-
+uation presented shows clearly that the diversity
+gap exists for multiple instruct LLMs. Instruction-
+
+tuning leads the model to focus on the conversation
+task and narrow its output space, which is further
+limited by the chat template. Fine-tuning toward
+human preference, i.e. “how” the model responds,
+is a strong signal further limits output diversity.
+Moreover, the loss of diversity suggests that mod-
+els focus too heavily on the preference data. Plastic-
+ity, the observed effect that neural networks even-
+tually lose their ability to learn from new data, is
+necessary for neural models to keep learning. Yet,
+Dohare et al. (2024) showed that is often not the
+case, implying that, at some point, fine-tuning is
+ineffective due to limited plasticity resulting from
+diversity loss. This could have further implications,
+especially for RLVR, since our experiments Fig-
+ure 2 show that DPO already significantly reduces
+diversity; it may be too late to adjust and learn more.
+This as an interesting avenue for future work.
+Conformative decoding shows improvements in
+both diversity and quality, which is promising for
+several applications that value diversity. Yet, it
+proved less effective for Llama 3.1 8B as measured
+by VSn-gram, VSjina, and THjina (Figure 3a). In
+Figure 1a, Llama 3.1 8B shows the weakest drop in
+diversity; hence, it might simply be a better model
+to begin with. Zhou et al. (2023) showed that Llama
+(Touvron et al., 2023) could be improved by train-
+ing on fewer but higher quality and highly diverse
+data to improve model performance. Similarly, this
+suggests that our method is primarily suitable for
+models that exhibit low diversity after preference
+tuning; its effectiveness could depend on the degree
+of the diversity gap. In the across-prompts results,
+we still see increased diversity, suggesting the per-
+prompt evaluation is smoothed across prompts. A
+follow-up study should investigate the relationship
+between the degree of the diversity gap and the
+improvements due to conformative decoding.
+Finally, Conformative decoding relies on a trun-
+cation strategy to avoid degenerate outputs (Holtz-
+man et al., 2020). Here, we use nucleus sampling
+as our baseline; it could be worthwhile to inves-
+tigate other truncation strategies (e.g., Fan et al.,
+2018; Meister et al., 2023; Finlayson et al., 2024).
+Moreover, our method can easily be adapted to
+an objective function for beam search similar to
+contrastive decoding proposed by Li et al. (2023).
+
+6 Conclusion
+
+We investigate the diversity gap for a narrative
+generation task. For our experiments, we eval-
+
+uated diversity on a per-prompt basis using the
+Vendi Score (both lexical and semantic features)
+and Truncated Entropy, and we apply MAUVE, Pre-
+cision and Recall to evaluate quality and diversity
+across-prompts. We show that instruction-tuned
+LLMs suffer a loss in diversity compared to their
+base models which is mostly due to DPO. Based
+on this finding, we propose a decoding strategy to
+reintroduce diversity after instruction-tuning; con-
+formative decoding typically reintroduces diversity
+while maintaining quality.
+
+Limitations
+
+Diversity is a tricky concept to capture for narra-
+tives, especially for longer sequences; it is difficult
+to assess by human participants (Shaib et al., 2025).
+Narratives span an introduction, followed by ac-
+tions and a conclusion (Sharples and Pérez y Pérez,
+2022). Therefore, assessing the diversity of a set
+of narratives requires extensive reading, causing
+fatigue among participants. Truncating to an as-
+sessable narrative length would heavily impact the
+perceived diversity. In future work, we aim to ad-
+dress this limitation and research effective and scal-
+able methods for evaluating diversity in narrative
+generation using human participants. Developing
+an automated approach to perform these kinds of
+evaluations is essential.
+
+This study focuses solely on smaller open-source
+and open-weights models for practical reasons.
+Smaller models are less powerful and more likely
+to benefit from our decoding strategy, but also be-
+cause running the base and instruct models simul-
+taneously increases the computational overhead.
+However, Le Bronnec et al. (2024) showed that
+Llama 2 70B Chat also suffers a diversity loss, and
+future work should investigate the effects of our de-
+coding algorithm for larger LLMs and in different
+domains that value diversity.
+
+Finally, using incipits introduces some diversity,
+meaning we are not generating identical prompts
+for the 50 samples we draw for each writing prompt.
+As mentioned in 3.1.2, this is a necessary limita-
+tion for a fair comparison with the base models to
+make them perform the narrative generation task
+consistently. Omitting the incipit leads to com-
+paring artefacts of different classes, which is not
+meaningful.
+
+References
+
+Margareta Ackerman and Daniel Brown. 2024. Depic-
+tions of jews in large generative models. In /5th
+International Conference on Computational Creativ-
+ity, pages 342-347.
+
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie
+Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind
+Neelakantan, ..., and Dario Amodei. 2020. Lan-
+guage models are few-shot learners. In Advances in
+Neural Information Processing Systems, volume 33,
+pages 1877-1901.
+
+Jiaju Chen, Chongming Gao, Shuai Yuan, Shuchang Liu,
+Qingpeng Cai, and Peng Jiang. 2025. DLCRec: A
+novel approach for managing diversity in LLM-based
+recommender systems. Preprint, arXiv:2408.12470.
+ArXiv:2408.12470.
+
+KuanChao Chu, Yi-Pei Chen, and Hideki Nakayama.
+2024. Exploring and controlling diversity in LLM-
+agent conversation. Preprint, arXiv:2412.21102.
+ArXiv:2412.21102.
+
+Shibhansh Dohare, J. Fernando Hernandez-Garcia,
+Qingfeng Lan, Parash Rahman, A. Rupam Mahmood,
+and Richard S. Sutton. 2024. Loss of plasticity in
+deep continual learning. Nature, 632(8026):768-
+774.
+
+Angela Fan, Mike Lewis, and Yann Dauphin. 2018. Hi-
+erarchical neural story generation. In 56th Annual
+Meeting of the Association for Computational Lin-
+guistics (Volume 1: Long Papers), pages 889-898.
+Association for Computational Linguistics.
+
+Matthew Finlayson, John Hewitt, Alexander Koller,
+Swabha Swayamdipta, and Ashish Sabharwal. 2024.
+Closing the curious case of neural text degeneration.
+In 12th International Conference on Learning Repre-
+sentations.
+
+Kathleen Fraser, Svetlana Kiritchenko, and Isar Ne-
+jadgholi. 2023. Diversity is not a one-way street:
+pilot study on ethical interventions for racial bias in
+text-to-image systems. In /4th International Confer-
+ence on Computational Creativity, pages 288-292.
+
+Dan Friedman and Adji Bousso Dieng. 2023. The Vendi
+Score: A diversity evaluation metric for machine
+learning. Transactions on Machine Learning Re-
+search.
+
+Fabricio Goes, Zisen Zhou, Piotr Sawicki, Marek
+Grzes, and Daniel G Brown. 2022. Crowd score:
+A method for the evaluation of jokes using large
+language model AI voters as judges. Preprint,
+arXiv:2212.11214.
+
+Kazjon Grace and Mary Lou Maher. 2016. Surprise-
+triggered reformulation of design goals. Proceedings
+of the AAAI Conference on Artificial Intelligence,
+30(1).
+
+Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri,
+Abhinav Pandey, Abhishek Kadian, Ahmad Al-
+Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-
+ten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh
+Goyal, Anthony Hartshorn, Aobo Yang, Archi Mi-
+tra, Archie Sravankumar, Artem Korenev, Arthur
+Hinsvark, and 542 others. 2024. The Ilama 3 herd of
+models. Preprint, arXiv:2407.21783.
+
+Dirk Groeneveld, Iz Beltagy, Pete Walsh, Akshita Bha-
+gia, Rodney Kinney, Oyvind Tafjord, Ananya Harsh
+Jha, Hamish Ivison, lan Magnusson, Yizhong Wang,
+Shane Arora, David Atkinson, Russell Authur, Khy-
+athi Raghavi Chandu, Arman Cohan, Jennifer Dumas,
+Yanai Elazar, Yuling Gu, Jack Hessel, and 24 others.
+2024. OLMo: Accelerating the science of language
+models. Preprint, arXiv:2402.00838.
+
+Perttu Hamiiliainen, Mikke Tavast, and Anton Kunnari.
+2023. Evaluating large language models in gener-
+ating synthetic hci research data: a case study. In
+2023 CHI Conference on Human Factors in Com-
+puting Systems, CHI’23. Association for Computing
+Machinery.
+
+Martin Heusel, Hubert Ramsauer, Thomas Unterthiner,
+Bernhard Nessler, and Sepp Hochreiter. 2017. GANs
+trained by a two time-scale update rule converge to
+a local nash equilibrium. In Advances in Neural
+Information Processing Systems, volume 30.
+
+Ari Holtzman, Jan Buys, Li Du, Maxwell Forbes, and
+Yejin Choi. 2020. The curious case of neural text
+degeneration. In 8th International Conference on
+Learning Representations, CLR 2020.
+
+Francisco Ibarrola and Kazjon Grace. 2024. Measuring
+diversity in co-creative image generation. In /5th In-
+ternational Conference on Computational Creativity.
+
+Francisco Ibarrola, Tomas Lawton, and Kazjon Grace.
+2024. A collaborative, interactive and context-aware
+drawing agent for co-creative design. [EEE Trans-
+actions on Visualization and Computer Graphics,
+
+30(8):5525-5537.
+
+Albert Q. Jiang, Alexandre Sablayrolles, Arthur Men-
+sch, Chris Bamford, Devendra Singh Chaplot, Diego
+de las Casas, Florian Bressand, Gianna Lengyel, Guil-
+laume Lample, Lucile Saulnier, Lélio Renard Lavaud,
+Marie-Anne Lachaux, Pierre Stock, Teven Le Scao,
+Thibaut Lavril, Thomas Wang, Timothée Lacroix,
+and William El Sayed. 2023a. Mistral 7b. Preprint,
+arXiv:2310.06825.
+
+Guangyuan Jiang, Manjie Xu, Song-Chun Zhu, Wen-
+juan Han, Chi Zhang, and Yixin Zhu. 2023b. Evaluat-
+ing and inducing personality in pre-trained language
+models. In Advances in Neural Information Process-
+ing Systems, volume 36, pages 10622-10643.
+
+Anna Jordanous and Bill Keller. 2016. Modelling cre-
+ativity: Identifying key components through a corpus-
+based approach. PLoS ONE, 11(10).
+
+10
+
+Robert Kirk, Ishita Mediratta, Christoforos Nalmpantis,
+Jelena Luketina, Eric Hambro, Edward Grefenstette,
+and Roberta Raileanu. 2024. Understanding the ef-
+fects of RLHF on LLM generalisation and diversity.
+In 12th International Conference on Learning Repre-
+sentations.
+
+Tuomas Kynkianniemi, Tero Karras, Samuli Laine,
+Jaakko Lehtinen, and Timo Aila. 2019. Improved
+precision and recall metric for assessing generative
+models. In Advances in Neural Information Process-
+ing Systems, volume 32. Curran Associates, Inc.
+
+Nathan Lambert, Jacob Morrison, Valentina Pyatkin,
+Shengyi Huang, Hamish Ivison, Faeze Brahman,
+Lester James V. Miranda, Alisa Liu, Nouha Dziri,
+Shane Lyu, Yuling Gu, Saumya Malik, Victoria
+Graf, Jena D. Hwang, Jiangjiang Yang, Ronan Le
+Bras, Oyvind Tafjord, Chris Wilhelm, Luca Sol-
+daini, and 4 others. 2025. Tulu 3: Pushing fron-
+tiers in open language model post-training. Preprint,
+arXiv:2411.15124.
+
+Florian Le Bronnec, Alexandre Verine, Benjamin Ne-
+grevergne, Yann Chevaleyre, and Alexandre Al-
+lauzen. 2024. Exploring precision and recall to as-
+sess the quality and diversity of LLMs. In 62nd An-
+nual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 11418—
+11441. Association for Computational Linguistics.
+
+Tom Leinster. 2021. Entropy and Diversity: The Ax-
+iomatic Approach. Cambridge University Press.
+
+Jiwei Li, Michel Galley, Chris Brockett, Jianfeng Gao,
+and Bill Dolan. 2016. A diversity-promoting objec-
+tive function for neural conversation models. In 2016
+Conference of the North American Chapter of the
+Association for Computational Linguistics: Human
+Language Technologies, pages 110-119. Association
+for Computational Linguistics.
+
+Xiang Lisa Li, Ari Holtzman, Daniel Fried, Percy Liang,
+Jason Eisner, Tatsunori Hashimoto, Luke Zettle-
+moyer, and Mike Lewis. 2023. Contrastive decoding:
+Open-ended text generation as optimization. In 6/st
+Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 12286—
+12312. Association for Computational Linguistics.
+
+Clara Meister, Tiago Pimentel, Gian Wiher, and Ryan
+Cotterell. 2023. Locally typical sampling. Transac-
+tions of the Association for Computational Linguis-
+tics, 11:102-121.
+
+Niklas Muennighoff, Nouamane Tazi, Loic Magne,
+and Nils Reimers. 2023. MTEB: Massive text em-
+bedding benchmark. Preprint, arXiv:2210.07316.
+ArXiv:2210.07316.
+
+Moin Nadeem, Tianxing He, Kyunghyun Cho, and
+James Glass. 2020. A systematic characterization of
+sampling algorithms for open-ended language gener-
+ation. In Ist Conference of the Asia-Pacific Chapter
+of the Association for Computational Linguistics and
+the 10th International Joint Conference on Natural
+
+Language Processing, pages 334-346. Association
+for Computational Linguistics.
+
+Vishakh Padmakumar and He He. 2024. Does writing
+with language models reduce content diversity? In
+12th International Conference on Learning Represen-
+tations.
+
+Joon Sung Park, Joseph O’Brien, Carrie Jun Cai, Mered-
+ith Ringel Morris, Percy Liang, and Michael S. Bern-
+stein. 2023. Generative agents: Interactive simulacra
+of human behavior. In 36th Annual ACM Symposium
+on User Interface Software and Technology, UIST
+°23. Association for Computing Machinery.
+
+Max Peeperkorn, Tom Kouwenhoven, Dan Brown, and
+Anna Jordanous. 2024. Is temperature the creativity
+parameter of large language models? In /5th In-
+ternational Conference on Computational Creativity,
+pages 226-235.
+
+Krishna Pillutla, Lang Liu, John Thickstun, Sean
+Welleck, Swabha Swayamdipta, Rowan Zellers, Se-
+woong Oh, Yejin Choi, and Zaid Harchaoui. 2023.
+Mauve scores for generative models: Theory and
+practice. Journal of Machine Learning Research,
+
+24(356):1-92.
+
+Krishna Pillutla, Swabha Swayamdipta, Rowan Zellers,
+John Thickstun, Sean Welleck, Yejin Choi, and Zaid
+Harchaoui. 2021. Mauve: Measuring the gap be-
+tween neural text and human text using divergence
+frontiers. In Advances in Neural Information Pro-
+cessing Systems, volume 34, pages 4816-4828.
+
+Tiago Pimentel, Clara Isabel Meister, and Ryan Cot-
+terell. 2023. On the usefulness of embeddings, clus-
+ters and strings for text generation evaluation. In The
+11th International Conference on Learning Represen-
+tations.
+
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Christo-
+pher D Manning, Stefano Ermon, and Chelsea Finn.
+2023. Direct preference optimization: Your language
+model is secretly a reward model. In Advances in
+neural information processing systems, volume 36,
+pages 53728-53741. Curran Associates, Inc.
+
+Kyle Robinson, Dan Brown, and Markus Schedl. 2020.
+User insights on diversity in music recommendation
+lists. In 2/ st International Society for Music Infor-
+mation Retrieval Conference, pages 446-453.
+
+Mehdi S. M. Sajjadi, Olivier Bachem, Mario Lucic,
+Olivier Bousquet, and Sylvain Gelly. 2018. Assess-
+ing generative models via precision and recall. In
+Advances in Neural Information Processing Systems,
+volume 31.
+
+Chantal Shaib, Joe Barrow, Jiuding Sun, Alexa F. Siu,
+Byron C. Wallace, and Ani Nenkova. 2025. Stan-
+dardizing the measurement of text diversity: A tool
+and a comparative analysis of scores. Preprint,
+arXiv:2403.00553.
+
+11
+
+Mike Sharples and Rafael Pérez y Pérez. 2022. Story
+machines: How computers have become creative
+writers, 1st edition. Routledge.
+
+Juliana Shihadeh and Margareta Ackerman. 2023a.
+Shattering bias: A path to bridging the gender di-
+vide with creative machines. In /4th International
+Conference on Computational Creativity, pages 278—
+282.
+
+Juliana Shihadeh and Margareta Ackerman. 2023b.
+What does genius look like? an analysis of brilliance
+bias in text-to-image models. In 14th International
+Conference on Computational Creativity, pages 235-
+244.
+
+Saba Sturua, Isabelle Mohr, Mohammad Kalim Akram,
+Michael Giinther, Bo Wang, Markus Krimmel, Feng
+Wang, Georgios Mastrapas, Andreas Koukounas,
+Andreas Koukounas, Nan Wang, and Han Xiao.
+2024. jina-embeddings-v3: Multilingual embed-
+dings with task LoRA. Preprint, arXiv:2409.10173.
+ArXiv:2409.10173.
+
+Gemma Team, Morgane Riviere, Shreya Pathak,
+Pier Giuseppe Sessa, Cassidy Hardin, Surya Bhupati-
+raju, Léonard Hussenot, Thomas Mesnard, Bobak
+Shahriari, Alexandre Ramé, Johan Ferret, Peter Liu,
+Pouya Tafti, Abe Friesen, Michelle Casbon, Sabela
+Ramos, Ravin Kumar, Charline Le Lan, Sammy
+Jerome, and 179 others. 2024. Gemma 2: Improving
+open language models at a practical size. Preprint,
+arXiv:2408.00118.
+
+Team OLMo, Pete Walsh, Luca Soldaini, Dirk Groen-
+eveld, Kyle Lo, Shane Arora, ..., and Hannaneh
+Hajishirzi. 2025. 2 OLMo 2 furious. Preprint,
+arXiv:2501.00656. ArXiv:2501.00656.
+
+Selim Furkan Tekin, Fatih Ilhan, Tiansheng Huang, Si-
+hao Hu, and Ling Liu. 2024. LLM-TOPLA: Efficient
+LLM ensemble by maximising diversity. In Find-
+ings of the Association for Computational Linguis-
+tics: EMNLP 2024, pages 11951-11966. Association
+for Computational Linguistics.
+
+Guy Tevet and Jonathan Berant. 2021. Evaluating the
+evaluation of diversity in natural language generation.
+In 16th Conference of the European Chapter of the
+Association for Computational Linguistics: Main Vol-
+ume, pages 326-346. Association for Computational
+Linguistics.
+
+Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier
+Martinet, Marie-Anne Lachaux, Timothée Lacroix,
+Baptiste Roziére, Naman Goyal, Eric Hambro, Faisal
+Azhar, Aurelien Rodriguez, Armand Joulin, Edouard
+Grave, and Guillaume Lample. 2023. Llama: Open
+and efficient foundation language models. Preprint,
+arXiv:2302.13971.
+
+Ashwin Vijayakumar, Michael Cogswell, Ramprasaath
+Selvaraju, Qing Sun, Stefan Lee, David Crandall,
+and Dhruv Batra. 2018. Diverse beam search for
+improved description of complex scenes. AAAI Con-
+ference on Artificial Intelligence, 32(1).
+
+Zhilin Yang, Zihang Dai, Ruslan Salakhutdinov, and
+William W. Cohen. 2018. Breaking the softmax bot-
+tleneck: A high-rank RNN language model. In Jnter-
+national Conference on Learning Representations.
+
+Chunting Zhou, Pengfei Liu, Puxin Xu, Srinivasan Iyer,
+Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping
+Yu, LILI YU, Susan Zhang, Gargi Ghosh, Mike
+Lewis, Luke Zettlemoyer, and Omer Levy. 2023.
+LIMA: Less is more for alignment. In Advances
+in neural information processing systems, volume 36,
+pages 55006-55021. Curran Associates, Inc.
+
+George Kingsley Zipf. 1949. Human behavior and the
+principle of least effort: An introduction to human
+ecology. Cambridge: Addison-Wesley.
+
+A Computational Costs of Experiments
+
+All experiments were run on up to 3 Nvidia A100
+GPU 80GB. For the diversity gap experiments (sub-
+section 3.2), depending on the model, each run re-
+quired an estimated 7 to 18 hours of GPU compute.
+The confirmation decoding experiments (subsec-
+tion 4.3), depending on the model, each required
+an estimated 18 to 24 hours of GPU compute.
+
+B_ Use of Scientific Artefacts
+
+The experiments in this paper use a subset of the
+Writing Prompt dataset by FAIR originally pre-
+sented in Fan et al. (2018) and is available under
+an MIT licence.
+
+C_ Ethical Considerations and Risks
+
+Narrative generation, which, more broadly, has
+been known to give rise to writings that can po-
+tentially be considered offensive. While selecting a
+subset of the Writing Prompt dataset for evaluation,
+we removed any offensive or inappropriate prompts
+and incipits, to mitigate risks for future research
+that involves human evaluation.
+
+12
+
