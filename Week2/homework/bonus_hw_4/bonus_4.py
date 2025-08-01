@@ -141,7 +141,7 @@ with open('clean_corpus.txt', 'w', encoding='utf-8') as f:
 
 # Save stats.md
 with open('stats.md', 'w', encoding='utf-8') as f:
-    f.write(f"Chunks before: {total_chunks_before}, Tokens before: {total_tokens_before}\n")
-    f.write(f"Chunks after: {total_chunks_after}, Tokens after: {total_tokens_after}\n")
-    f.write(f"Removal percentage (chunks): {removal_percentage:.2f}%\n")
-    f.write(f"Removal percentage (tokens): {token_removal_percentage:.2f}%\n")
+    f.write(f"### Chunks before: {total_chunks_before}, Tokens before: {total_tokens_before}\n\n")
+    f.write(f"### Chunks after: {total_chunks_after}, Tokens after: {total_tokens_after}\n\n")
+    f.write(f"### Removal percentage (chunks): {removal_percentage:.2f}%\n\n")
+    f.write(f"### Removal percentage (tokens): {token_removal_percentage:.2f}%\n\n")

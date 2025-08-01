@@ -44,6 +44,7 @@ importance scoring, then adopt a two-stage fine-tuning strategy of training Syst
 supervised fine-tuning (SFT) to enhance knowledge and intuition and refine System 2 tasks with
 reinforcement learning (RL) to reinforce deeper logical deliberation next. Extensive experiments show
 ‘that the tuo-stage fine-tuning strategy, SFT and RL, lowers active parameter usage while matching or
+surpassing SOTA PEFT baselines.
 In finance, Large Language Models (LLMs) face frequent knowledge
 conflicts due to discrepancies between pre-trained parametric knowledge and real-time market data.
 ‘These conflicts become particularly problematic when LLMs are deployed in real-world investment
@@ -275,6 +276,7 @@ of extracted salient concepts; text summarization and output classification alig
 ‘expectations. Text2VLM provides a scalable tool for comprehensive safety assessment, contributing to
 ‘the development of more robust safety mechanisms for VLls. By enhancing the evaluation of multimodal
 vulnerabilities, Text2ViM plays a role in advancing the safe deployment of VLMs in diverse, real-world
+applications.
 The rapid spread of multilingual misinformation requires robust automated fact
 verification systems capable of handling fine-grained veracity assessments across diverse languages.
 While large language models have shown remarkable capabilities across many NLP tasks, their
@@ -450,7 +452,6 @@ German datasets, indicating the effectiveness of explicitly structuring NER inst
 verify that combining the proposed code-based prompting method with the chain-of-thought prompting
 further improves performance.
 in image captioning, yet they still lag behind their English counterparts due to limited multilingual
-‘training data and costly large-scale model parameterization. Retrieval-augmented generation (RAG)
 offers a promising alternative by conditioning caption generation on retrieved examples in the target
 Language, reducing the need for extensive multilingual training. However, multilingual RAG captioning
 models often depend on retrieved captions translated from English, which can introduce mismatches and
@@ -505,6 +506,7 @@ articulatory configurations. The current implementation is embedded in 2 web-bas
 (SpeecharticulationTrainer) that includes sagittal, glottal, and palatal views, making it suitable for
 Use in phonetics education and speech therapy. While this paper focuses on the static modeling
 aspects, future work will address dynamic movement generation and integration with articulatory-
+Dialectal Arabic (DA) poses a persistent challenge for natural
 Language processing (NLP), as most everyday communication in the Arab world occurs in dialects that
 diverge significantly from Modern Standard Arabic (HSA). This linguistic divide limits access to
 digital services and educational resources and impedes progress in Arabic machine translation. This
@@ -816,7 +818,6 @@ strong performance on benchmarks largely derived from general-domain corpora lik
 effectiveness under realistic, diverse retrieval scenarios remains underexplored. We evaluated RAG
 systems using MassiveDS, a large-scale datastore with mixture of knowledge, and identified critical
 Limitations: retrieval mainly benefits smaller models, rerankers add minimal value, and no single
-retrieval source consistently excels. Moreover, current LLMs struggle to route queries across
 heterogeneous knowledge sources. These findings highlight the need for adaptive retrieval strategies
 before deploying RAG in real-world settings. Our code and data can be found at this https URL.
 The uninterpretability of DNNs has led to the adoption of abstract interpretation-
@@ -1005,6 +1006,7 @@ Our comprehensive empirical analysis reveals significant differences in how thes
 clinical explanation tasks, with zero-shot and few-shot prompting. Our findings underscore the value
 of human expertise in guiding LLM behavior and offer a step toward safer, more transparent AI systems
 for psychological well-being.
+From: Prajval Bolegave [view email][v1] Sat, 26 Jul 2025 10:01:55 UTC (9,671 KB)
 he present the Polish Vocabulary Size Test (PVST), a novel tool for assessing the
 receptive vocabulary size of both native and non-native Polish speakers. Based on Item Response Theory
 and Computerized Adaptive Testing, PVST dynamically adjusts to each test-taker's proficiency level,
@@ -1194,6 +1196,7 @@ In this work, we introduce code decomposition attacks, where a malicious coding 
 into a series of seemingly benign subtasks across multiple conversational turns to evade safety
 filters. To facilitate systematic evaluation, we introduce \benchmarkname{}, a large-scale benchmark
 designed to evaluate the robustness of code LLMs against both single-turn and multi-turn malicious
+pronpts. Empirical results across open- and closed-source models reveal persistent vulnerabilities,
 especially under multi-turn scenarios. Fine-tuning on MOCHA improves rejection rates while preserving
 coding ability, and importantly, enhances robustness on external adversarial datasets with up to 32.4%
 increase in rejection rates without any additional supervision.
@@ -1536,7 +1539,6 @@ based on the anchoring-and-adjustment heuristic: users anchor on salient words a
 adjustments to arrive at an interpretation. Topic interpretation can be viewed as making a judgment
 under uncertainty by an ecologically rational user, and hence cognitive biases aware user models and
 evaluation frameworks are needed.
-Retrieval-augnented generation (RAG) enhances large language
 models (LLMs) by incorporating retrieved information. Standard retrieval process prioritized
 relevance, focusing on topical alignnent betueen queries and passages. In contrast, in RAG, the
 emphasis has shifted to utility, which considers the usefulness of passages for generating accurate
@@ -1647,6 +1649,7 @@ considerably. The results reveal marked improvements in operational efficiency, 
 practitioners to direct their efforts toward critical analytical and decision-making activities
 instead of manual reviews. This research highlights promising technology-driven strategies that can
 significantly alter workflow dynamics within the legal sector, emphasizing the role of automation in
+refining judicial processes.
 Large language models (LLMs) are revolutionizing the field of
 ‘education by enabling personalized learning experiences tailored to individual student needs. In this
 paper, we introduce a framework for Adaptive Learning Systems that leverages LLM-powered analytics for
@@ -1703,9 +1706,11 @@ page, or unanswerable, with each accompanied by fine-grained multimodal evidence
 validate that multimodal and retrieval-augmented models substantially outperform text-only baselines,
 particularly on visually grounded and cross-page tasks. MMESGBench is publicly available as an open-
 source dataset at this https URL.
+Multilingual large language models (LLMs) exhibit strong cross-
 Linguistic generalization, yet medium to low resource languages underperform on common benchmarks such
 as ARC-Challenge, MILU, and HellaSwag. We analyze activation patterns in Genma-2-28 across all 26
 residual layers and 10 languages: Chinese (zh), Russian (ru), Spanish (es), Italian (it), medium to
+low resource languages including Indonesian (id), Catalan (ca), Marathi (mr), Malayalam (ml), and
 Hindi (hi), with English (en) as the reference. Using Sparse Autoencoders (SAEs), we reveal systematic
 disparities in activation patterns. Medium to low resource languages receive up to 26.27 percent lower
 activations in early layers, with a persistent gap of 19.89 percent in deeper layers. To address this,
@@ -2073,7 +2078,6 @@ paradigm shifts over the last few years, the vast majority of PCR methods contin
 successful in PCR due to two key challenges: i. Lengthy legal text limitation; when using the powerful
 BERT-based transformer models, there is a limit of input text lengths, which inevitably requires to
 shorten the input via truncation or division with a loss of legal context information. ii. Lack of
-legal training data; due to data privacy concerns, available PCR datasets are often limited in size,
 making it difficult to train deep learning-based models effectively. In this research, we address
 ‘these challenges by leveraging LLM-based text embedders in PCR. LLM-based embedders support longer
 input lengths, and since we use them in an unsupervised manner, they do not require training data,
@@ -2209,7 +2213,6 @@ when it is ambiguous. Using recently proposed metrics of semantic uncertainty, w
 with high translation and gender accuracy on unambiguous instances do not necessarily exhibit the
 expected level of uncertainty in ambiguous ones. Similarly, debiasing has independent effects on
 ambiguous and unambiguous translation instances.
-From: Ieva Raminta Staliunaite [view email][v1] Thu, 24 Jul 2025 1:
 Large reasoning models (LRMs) have emerged as a significant
 advancement in artificial intelligence, representing a specialized class of large language models
 (LLMs) designed to tackle complex reasoning tasks. The defining characteristic of LRMs lies in their
@@ -2380,7 +2383,6 @@ layer analysis, we show that sticky tokens disproportionately dominate the model
 representations, raising concerns about tokenization robustness. Qur findings show the need for better
 tokenization strategies and model design to mitigate the impact of sticky tokens in future text
 ‘embedding applications.
-Recent progress in Multi-modal Large Language Models (MLLMs) has
 enabled step-by-step multi-modal mathematical reasoning by performing visual operations based on the
 ‘textual instructions. A promising approach uses code as an intermediate representation to precisely
 ‘express and manipulate the images in the reasoning steps. However, existing evaluations focus mainly
@@ -2409,6 +2411,7 @@ Active learning optimizes the annotation process and the quality of annotated da
 in faster model implementation and improved model performance. This work combines active learning,
 data augmentation, and active learning and evaluation techniques to create a classifier that is used
 to enhance vaccine safety surveillance from ED triage notes.
+Recent advances in end-to-end spoken language models (SLMs) have
 significantly improved the ability of AI systems to engage in natural spoken interactions. However,
 most existing models treat speech merely as a vehicle for linguistic content, often overlooking the
 rich paralinguistic and speaker characteristic cues embedded in human speech, such as dialect, age,
@@ -2546,6 +2549,7 @@ white +4
 African -—_{_ IT}
 $ Brown a
 Black {—_T >
+Yellow +L}
 British ——__E}+——+
 Avg. Probability Difference
 Figure 1: Average difference in the probability of the
@@ -2643,7 +2647,6 @@ output, see Figure 3. This implies that the effect
 seen in the initial layers is purely indirect. Since the
 local syntax around the point of change remains
 constant, this suggests that the initial MLP lay-
-fro2
 Figure 3: Average A, when only direct component of a
 MLP layer is patched.
 ers are processing not just structure but also the
@@ -2686,8 +2689,8 @@ This reduction occurred regardless of whether all
 token positions or only the identity token position
 were patched. For most heads, patching layers
 beyond the first had minimal impact on attention
-patterns, for details see Appendix I.
 Our findings validate the hypothesis of an inter-
+B10 a
 Aitention Heads
 Figure 4: Average A, for patching individual attention
 heads.
@@ -2763,7 +2766,6 @@ Twelfth International Conference on Learning Repre-
 Stefan Heimersheim and Neel Nanda. 2024. How to
 use and interpret activation patching. arXiv preprint
 Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou,
-2021. Measuring massive multitask language under-
 standing. In International Conference on Learning
 Representations.
 2019. What does BERT learn about the structure of
@@ -2778,6 +2780,7 @@ the 2024 Conference on Empirical Methods in Natu-
 ral Language Processing, pages 6346-6359, Miami,
 Florida, USA. Association for Computational Lin-
 Nanda, Geoffrey Irving, Rohin Shah, and Vladimir
+scale? evidence from multiple choice capabilities in
 Belinkov. 2022. Locating and editing factual associ-
 ations in GPT. In Advances in Neural Information
 Processing Systems.
@@ -2785,7 +2788,6 @@ Meta. 2024b. Llama 3.2 family of models.
 Judea Pearl. 2001. Direct and indirect effects. In
 Proceedings of the Seventeenth Conference on Un-
 certainty in Artificial Intelligence, UAV01, page
-411-420. Morgan Kaufmann Publishers Inc.
 and Wen-tau Yih. 2018. Dissecting contextual word
 embeddings: Architecture and representation. In Pro-
 ceedings of the 2018 Conference on Empirical Meth-
@@ -2794,6 +2796,7 @@ ods in Natural Language Processing, pages 1499-
 Leonard Salewski, Stephan Alaniz, Isabel Rio-Torto,
 personation reveals large language models’ strengths
 and biases. In Thirty-seventh Conference on Neural
+Alessandro Stolfo, Yonatan Belinkov, and Mrinmaya
 Sachan. 2023. A mechanistic interpretation of arith-
 metic reasoning in language models using causal
 mediation analysis. In Proceedings of the 2023 Con-
@@ -2801,6 +2804,7 @@ ference on Empirical Methods in Natural Language
 Processing, pages 7035-7052, Singapore. Associa-
 tion for Computational Linguistics.
 and Heng Ji. 2025. Persona-DB: Efficient large lan-
+guage model personalization for response prediction
 with collaborative data refinement. In Proceedings
 of the 31st International Conference on Computa-
 tional Linguistics, pages 281-296, Abu Dhabi, UAE.
@@ -2854,6 +2858,7 @@ White
 Black
 bright
 Negative-attributes bad
+helpful assistant
 African student
 Yellow student
 Brown student
@@ -2988,36 +2993,39 @@ by selected attenti
 1on given
 hted attent
 prompt used is the first question from "Abstract Algebra" subject.
+~ypqed pT-d1W
+-ypqed €T-c1W
 ~ypied TT-d1W
 - ypied T-c1W
 Layer: 11; Head: 25
 Layer: 10; Hea
-- yoied 9T-cIW.
+-yoied ST-cIW.
 -yied pT-cIW
--ypied €T-d1W
--ypied 8-1,
-| -ypied p41,
+| -ypied €-41W
 Layer: 11; Head: 27
 | -ypied T-41W
 Layer: 11; Head: 26
 ~ upqed ST-d1W
 - upqed OT-d1W
-- ypied 9T-d1W
-- pied pT-d1W
 -ypied TI-d1W
+-ypqed p-d1W
 -upqed €-d1W
 I - ypied T-d1W
 - pied 9T-d1W
 - pied ST-d1W
 I ~ pied T-d1W
+- ypied OL-d1W
+-ypqed S-d1W
+-ypqed Z7-d1W
 | - ypied T-d1W
--yed pl-d1W
-I - pied T-d1W
 -yored 9T-d1W
 -yored ST-d1W
+-yed pl-d1W
+-yored TL-d1W
+I - pied T-d1W
+-yored T-d1W
 Layer: 15; Head: 25
 | ~ypqed 9T-d1W
--ypied pT-d1W
 Layer: 13; Head: 16
 ken position after patch:
 is the first question from "Abstract Algebra
