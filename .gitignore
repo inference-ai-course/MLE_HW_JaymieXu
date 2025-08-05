@@ -2,6 +2,12 @@
 .venv/
 keys/
 cleaned_htmls/
+ThirdParty/
+
+.env
 
 Week2/homework/bonus_hw_2/*.pdf
 Week2/homework/bonus_hw_3/*.mp4
+
+Week3/homework/third_party/
+Week3/homework/cosyvoice/
