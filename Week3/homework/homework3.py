@@ -3,13 +3,6 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import soundfile as sf
-import io
-
-import torchaudio
-
-sys.path.append('third_party/Matcha-TTS')
-
 import torch
 import uvicorn
 import whisper
@@ -18,9 +11,6 @@ from fastapi.responses import FileResponse
 from huggingface_hub import login
 from transformers import pipeline, BitsAndBytesConfig
 from dotenv import load_dotenv
-
-from cosyvoice.cli.cosyvoice import CosyVoice
-from cosyvoice.utils.file_utils import load_wav
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,17 +30,6 @@ async def lifespan(app: FastAPI):
     app.state.asr_model = whisper.load_model("small")
     print("ASR model loaded.")
 
-    # Load TTS
-    app.state.tts_engine = CosyVoice(model_dir='pretrained_models/CosyVoice-300M-SFT', fp16=True)
-    print("TTS engine loaded.")
-
-    available_speakers = app.state.tts_engine.list_available_spks()
-
-    print("================================================")
-    print("Speakers available for your loaded model:")
-    print(available_speakers)
-    print("================================================")
-
     # --- LLM Loading ---
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -62,7 +41,7 @@ async def lifespan(app: FastAPI):
     # Load and store the LLM in the app's state
     app.state.llm = pipeline(
         "text-generation",
-        model="mistralai/Mistral-7B-Instruct-v0.1",
+        model="microsoft/Phi-3-mini-4k-instruct",
         model_kwargs={
             "quantization_config": quantization_config,
             "device_map": "auto",
@@ -83,6 +62,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "You are an helpful AI assistant. The user will provide you with text that has been transcribed from an audio file. Your job is to have a friendly but shy response to the content of the transcription."
+}
+
 conversation_history = []
 
 def transcribe_audio(asr_model, audio_bytes):
@@ -92,43 +76,35 @@ def transcribe_audio(asr_model, audio_bytes):
 
     return result["text"]
 
+
 def generate_response(llm, user_text):
-    conversation_history.append({"role": "user", "text": user_text})
-    # Construct prompt from history
-    prompt = ""
-    for turn in conversation_history[-5:]:
-        prompt += f"{turn['role']}: {turn['text']}\n"
+    # Frame the user's message to give context to the model.
+    conversation_history.append({"role": "user", "content": user_text})
 
-    outputs = llm(prompt, max_new_tokens=100, return_full_text=False)
+    # Get the last 5 turns of the conversation.
+    recent_conversation = conversation_history[-5:]
 
-    bot_response = outputs[0]["generated_text"]
-    conversation_history.append({"role": "assistant", "text": bot_response})
+    # Combine the system prompt with the recent conversation for the model.
+    prompt_context = [SYSTEM_PROMPT] + recent_conversation
+
+    # Use the tokenizer to apply the model's official chat template.
+    prompt = llm.tokenizer.apply_chat_template(
+        prompt_context,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+
+    # Generate a response.
+    outputs = llm(prompt, max_new_tokens=100, do_sample=True, temperature=0.7, top_k=50, top_p=0.95)
+
+    # Clean the output to get only the new assistant message.
+    raw_bot_response = outputs[0]["generated_text"]
+    bot_response = raw_bot_response.split("<|assistant|>")[-1].strip()
+
+    # Add the bot's response to the history.
+    conversation_history.append({"role": "assistant", "content": bot_response})
 
     return bot_response
-
-
-def synthesize_speech_to_file(tts, text, speaker='英文女', filename="response.wav"):
-    print(f"Synthesizing with speaker '{speaker}' and saving with torchaudio...")
-
-    for result in tts.inference_sft(text, speaker, stream=False):
-        audio_data = result['tts_speech']
-        sample_rate = tts.sample_rate
-
-        # Ensure the tensor is on the CPU before saving.
-        audio_data_cpu = audio_data.cpu()
-
-        # torchaudio.save expects a 2D tensor (channels, time).
-        # If the output tensor is 1D, we add a channel dimension.
-        if audio_data_cpu.dim() == 1:
-            audio_data_cpu = audio_data_cpu.unsqueeze(0)
-
-        # Save the audio using torchaudio, as shown in the official examples.
-        torchaudio.save(filename, audio_data_cpu, sample_rate)
-
-        print(f"Successfully saved audio to {filename}")
-        break
-
-    return filename
 
 @app.post("/chat/")
 async def chat_endpoint(request: Request, file: UploadFile = File(...)):
@@ -136,7 +112,6 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
 
     asr_model = request.app.state.asr_model
     llm = request.app.state.llm
-    tts = request.app.state.tts_engine
 
     user_text = transcribe_audio(asr_model, audio_bytes)
     print(f"DEBUG: Transcribed text -> '{user_text}'")
@@ -144,10 +119,7 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
     bot_text = generate_response(llm, user_text)
     print(f"DEBUG: LLM response -> '{bot_text}'")
 
-    file_path = synthesize_speech_to_file(tts, bot_text, filename="response.wav")
-    print(f"DEBUG: Generated TTS response and saved to {file_path}")
-
-    return FileResponse(file_path, media_type="audio/wav", filename="response.wav")
+    return FileResponse("response.wav", media_type="audio/wav", filename="response.wav")
 
 if __name__ == "__main__":
     uvicorn.run("homework3:app", host="127.0.0.1", port=8000, reload=True)
