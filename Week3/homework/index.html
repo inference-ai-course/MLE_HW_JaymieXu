@@ -1,0 +1,142 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant Demo</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; color: #1c1e21; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background-color: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); width: 100%; max-width: 600px; text-align: center; }
+        h1 { color: #0c0d0e; }
+        #recordButton { background-color: #1877f2; color: white; border: none; padding: 1rem 2rem; border-radius: 20px; font-size: 1.2rem; cursor: pointer; transition: background-color 0.3s, transform 0.2s; }
+        #recordButton.recording { background-color: #fa383e; transform: scale(1.05); }
+        #recordButton:disabled { background-color: #9dbef2; cursor: not-allowed; }
+        #status { margin-top: 1.5rem; font-size: 1.1rem; color: #606770; min-height: 25px; }
+        .conversation { margin-top: 2rem; text-align: left; max-height: 40vh; overflow-y: auto; border: 1px solid #dddfe2; padding: 1rem; border-radius: 8px;}
+        .message { margin-bottom: 1rem; padding: 0.8rem; border-radius: 18px; max-width: 80%; }
+        .user { background-color: #e7f3ff; color: #1877f2; margin-left: auto; border-bottom-right-radius: 4px; }
+        .assistant { background-color: #f0f2f5; color: #333; margin-right: auto; border-bottom-left-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Voice Assistant Demo</h1>
+    <p>Click the button and start speaking.</p>
+    <button id="recordButton">Hold to Record</button>
+    <div id="status">Initializing...</div>
+    <div class="conversation" id="conversation">
+        <!-- Messages will appear here -->
+    </div>
+</div>
+
+<script>
+    const recordButton = document.getElementById('recordButton');
+    const statusDiv = document.getElementById('status');
+    const conversationDiv = document.getElementById('conversation');
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let micStream = null;
+
+    // NEW: Function to initialize everything on page load
+    async function initialize() {
+        statusDiv.textContent = 'Requesting microphone permission...';
+        recordButton.disabled = true;
+        try {
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            statusDiv.textContent = 'Ready. Hold button to speak.';
+            recordButton.disabled = false;
+        } catch (error) {
+            console.error('Error accessing microphone:', error);
+            statusDiv.textContent = 'Microphone permission denied. Please allow access and refresh.';
+            recordButton.disabled = true;
+        }
+    }
+
+    async function startRecording() {
+        if (!micStream) {
+            statusDiv.textContent = 'Microphone not available.';
+            return;
+        }
+
+        statusDiv.textContent = 'Listening...';
+        recordButton.classList.add('recording');
+        recordButton.textContent = 'Recording...';
+
+        mediaRecorder = new MediaRecorder(micStream);
+        audioChunks = []; // Clear previous recording chunks
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            statusDiv.textContent = 'Processing...';
+
+            // NEW: Check if any audio was actually recorded
+            if (audioChunks.length === 0 || audioChunks[0].size === 0) {
+                console.log("No audio recorded.");
+                statusDiv.textContent = 'Recording was too short. Please hold the button while speaking.';
+                return; // Stop here, don't send to server
+            }
+
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'recording.wav');
+
+            try {
+                const response = await fetch('/chat/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+
+                const responseAudioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(responseAudioBlob);
+                const audio = new Audio(audioUrl);
+                audio.play();
+
+                statusDiv.textContent = 'Ready. Hold button to speak.';
+                addMessage("You said something...", "user");
+                addMessage("The assistant replied.", "assistant");
+
+            } catch (error) {
+                console.error('Error sending audio:', error);
+                statusDiv.textContent = `Error: ${error.message}`;
+            }
+        };
+
+        mediaRecorder.start();
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            recordButton.classList.remove('recording');
+            recordButton.textContent = 'Hold to Record';
+        }
+    }
+
+    function addMessage(text, sender) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', sender);
+        messageDiv.textContent = text;
+        conversationDiv.appendChild(messageDiv);
+        conversationDiv.scrollTop = conversationDiv.scrollHeight;
+    }
+
+    recordButton.addEventListener('mousedown', startRecording);
+    recordButton.addEventListener('mouseup', stopRecording);
+    recordButton.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+    recordButton.addEventListener('touchend', stopRecording);
+
+    // NEW: Run the initialize function when the page loads
+    window.addEventListener('load', initialize);
+
+</script>
+
+</body>
+</html>

@@ -7,10 +7,13 @@ import torch
 import uvicorn
 import whisper
 from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
 from transformers import pipeline, BitsAndBytesConfig
 from dotenv import load_dotenv
+
+from TTS.api import TTS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,12 +58,26 @@ async def lifespan(app: FastAPI):
     print(f"✅ Model is running on device: {model_device}")
     print("-" * 50)
 
+    print("Loading TTS")
+    app.state.tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(model_device)
+    print("TTS Loaded")
+
+    #print(TTS().list_models())
+
     yield
 
     # Code below yield runs on shutdown (optional)
     print("--- Lifespan event: Cleanup complete. ---")
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SYSTEM_PROMPT = {
     "role": "system",
@@ -82,7 +99,7 @@ def generate_response(llm, user_text):
     conversation_history.append({"role": "user", "content": user_text})
 
     # Get the last 5 turns of the conversation.
-    recent_conversation = conversation_history[-5:]
+    recent_conversation = conversation_history[-10:]
 
     # Combine the system prompt with the recent conversation for the model.
     prompt_context = [SYSTEM_PROMPT] + recent_conversation
@@ -106,12 +123,40 @@ def generate_response(llm, user_text):
 
     return bot_response
 
+
+def synthesize_speech(tts_engine, text, filename="response.wav"):
+    try:
+        tts_engine.tts_to_file(
+            text=text,
+            file_path=filename,
+            speaker="Ana Florence",  # A good, standard female voice
+            language="en"
+        )
+
+        return filename
+    except Exception as e:
+        # Print a more detailed error message
+        print(f"Error during TTS synthesis: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+@app.get("/", response_class=HTMLResponse)
+async def get_index():
+    """Serves the main HTML page for the voice assistant UI."""
+    html_path = Path(__file__).resolve().parent / "index.html"
+    if html_path.is_file():
+        return html_path.read_text(encoding="utf-8-sig")
+    else:
+        return "<h1>Error: index.html not found</h1><p>Please make sure the index.html file is in the same directory as your Python script.</p>", 404
+
 @app.post("/chat/")
 async def chat_endpoint(request: Request, file: UploadFile = File(...)):
     audio_bytes = await file.read()
 
     asr_model = request.app.state.asr_model
     llm = request.app.state.llm
+    tts = request.app.state.tts
 
     user_text = transcribe_audio(asr_model, audio_bytes)
     print(f"DEBUG: Transcribed text -> '{user_text}'")
@@ -119,7 +164,14 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
     bot_text = generate_response(llm, user_text)
     print(f"DEBUG: LLM response -> '{bot_text}'")
 
-    return FileResponse("response.wav", media_type="audio/wav", filename="response.wav")
+    output_audio_path = synthesize_speech(tts, bot_text)
+
+    if output_audio_path:
+        return FileResponse(output_audio_path, media_type="audio/wav", filename="response.wav")
+    else:
+        return {"error": "Failed to generate audio response."}
+
+    #return FileResponse("response.wav", media_type="audio/wav", filename="response.wav")
 
 if __name__ == "__main__":
     uvicorn.run("homework3:app", host="127.0.0.1", port=8000, reload=True)
