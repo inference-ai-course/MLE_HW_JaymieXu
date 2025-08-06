@@ -7,7 +7,7 @@ import torch
 import uvicorn
 import whisper
 from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
 from transformers import pipeline, BitsAndBytesConfig
@@ -150,6 +150,24 @@ async def get_index():
     else:
         return "<h1>Error: index.html not found</h1><p>Please make sure the index.html file is in the same directory as your Python script.</p>", 404
 
+
+@app.get("/audio/{filename}")
+async def get_audio(filename: str):
+    audio_path = Path(__file__).resolve().parent / filename
+    if ".." in filename or "/" in filename:
+        return {"error": "Invalid filename"}, 400
+    if audio_path.is_file():
+        # Create the response object first
+        response = FileResponse(audio_path, media_type="audio/wav")
+
+        # Add headers to prevent caching on the browser side.
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+        return response
+    return {"error": "File not found"}, 404
+
 @app.post("/chat/")
 async def chat_endpoint(request: Request, file: UploadFile = File(...)):
     audio_bytes = await file.read()
@@ -161,17 +179,30 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
     user_text = transcribe_audio(asr_model, audio_bytes)
     print(f"DEBUG: Transcribed text -> '{user_text}'")
 
+    # If transcription is empty, don't bother with the LLM
+    if not user_text.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No speech detected in audio."}
+        )
+
     bot_text = generate_response(llm, user_text)
     print(f"DEBUG: LLM response -> '{bot_text}'")
 
-    output_audio_path = synthesize_speech(tts, bot_text)
+    output_filename = "response.wav"
+    output_audio_path = synthesize_speech(tts, bot_text, filename=output_filename)
 
     if output_audio_path:
-        return FileResponse(output_audio_path, media_type="audio/wav", filename="response.wav")
+        return JSONResponse(content={
+            "user_text": user_text,
+            "bot_text": bot_text,
+            "audio_url": f"/audio/{output_filename}"  # Provide a URL to the audio
+        })
     else:
-        return {"error": "Failed to generate audio response."}
-
-    #return FileResponse("response.wav", media_type="audio/wav", filename="response.wav")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to generate audio response."}
+        )
 
 if __name__ == "__main__":
     uvicorn.run("homework3:app", host="127.0.0.1", port=8000, reload=True)

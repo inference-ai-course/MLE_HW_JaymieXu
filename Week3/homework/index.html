@@ -13,7 +13,7 @@
         #recordButton:disabled { background-color: #9dbef2; cursor: not-allowed; }
         #status { margin-top: 1.5rem; font-size: 1.1rem; color: #606770; min-height: 25px; }
         .conversation { margin-top: 2rem; text-align: left; max-height: 40vh; overflow-y: auto; border: 1px solid #dddfe2; padding: 1rem; border-radius: 8px;}
-        .message { margin-bottom: 1rem; padding: 0.8rem; border-radius: 18px; max-width: 80%; }
+        .message { margin-bottom: 1rem; padding: 0.8rem; border-radius: 18px; max-width: 80%; line-break: anywhere;}
         .user { background-color: #e7f3ff; color: #1877f2; margin-left: auto; border-bottom-right-radius: 4px; }
         .assistant { background-color: #f0f2f5; color: #333; margin-right: auto; border-bottom-left-radius: 4px; }
     </style>
@@ -22,11 +22,11 @@
 
 <div class="container">
     <h1>Voice Assistant Demo</h1>
-    <p>Click the button and start speaking.</p>
+    <p>Hold the button and speak to the assistant.</p>
     <button id="recordButton">Hold to Record</button>
     <div id="status">Initializing...</div>
     <div class="conversation" id="conversation">
-        <!-- Messages will appear here -->
+        <!-- Conversation will appear here -->
     </div>
 </div>
 
@@ -39,7 +39,6 @@
     let audioChunks = [];
     let micStream = null;
 
-    // NEW: Function to initialize everything on page load
     async function initialize() {
         statusDiv.textContent = 'Requesting microphone permission...';
         recordButton.disabled = true;
@@ -65,7 +64,7 @@
         recordButton.textContent = 'Recording...';
 
         mediaRecorder = new MediaRecorder(micStream);
-        audioChunks = []; // Clear previous recording chunks
+        audioChunks = [];
 
         mediaRecorder.ondataavailable = event => {
             audioChunks.push(event.data);
@@ -74,15 +73,12 @@
         mediaRecorder.onstop = async () => {
             statusDiv.textContent = 'Processing...';
 
-            // NEW: Check if any audio was actually recorded
             if (audioChunks.length === 0 || audioChunks[0].size === 0) {
-                console.log("No audio recorded.");
                 statusDiv.textContent = 'Recording was too short. Please hold the button while speaking.';
-                return; // Stop here, don't send to server
+                return;
             }
 
             const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-
             const formData = new FormData();
             formData.append('file', audioBlob, 'recording.wav');
 
@@ -92,19 +88,41 @@
                     body: formData
                 });
 
-                if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+                const data = await response.json();
 
-                const responseAudioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(responseAudioBlob);
-                const audio = new Audio(audioUrl);
-                audio.play();
+                if (!response.ok) {
+                    throw new Error(data.error || `Server error: ${response.statusText}`);
+                }
+
+                addMessage(data.user_text, "user");
+                addMessage(data.bot_text, "assistant");
+
+                // ======================= THE FIX IS HERE =======================
+                // Create a unique URL by adding the current timestamp as a query parameter.
+                // This is a "cache busting" technique to prevent the browser from
+                // playing the old audio file from its cache.
+                const uniqueAudioUrl = `${data.audio_url}?t=${new Date().getTime()}`;
+                console.log("Attempting to play audio from unique URL:", uniqueAudioUrl);
+
+                // Use the new, unique URL to create the audio object.
+                const audio = new Audio(uniqueAudioUrl);
+                // ===============================================================
+
+                const playPromise = audio.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(_ => {
+                        console.log("Audio playback started.");
+                    }).catch(error => {
+                        console.error("Audio playback failed:", error);
+                        statusDiv.textContent = "Click the page to play audio.";
+                        document.body.addEventListener('click', () => audio.play(), { once: true });
+                    });
+                }
 
                 statusDiv.textContent = 'Ready. Hold button to speak.';
-                addMessage("You said something...", "user");
-                addMessage("The assistant replied.", "assistant");
 
             } catch (error) {
-                console.error('Error sending audio:', error);
+                console.error('Error during chat:', error);
                 statusDiv.textContent = `Error: ${error.message}`;
             }
         };
@@ -128,13 +146,11 @@
         conversationDiv.scrollTop = conversationDiv.scrollHeight;
     }
 
+    window.addEventListener('load', initialize);
     recordButton.addEventListener('mousedown', startRecording);
     recordButton.addEventListener('mouseup', stopRecording);
     recordButton.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
     recordButton.addEventListener('touchend', stopRecording);
-
-    // NEW: Run the initialize function when the page loads
-    window.addEventListener('load', initialize);
 
 </script>
 
