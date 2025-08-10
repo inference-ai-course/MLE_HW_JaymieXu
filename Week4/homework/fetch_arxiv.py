@@ -1,12 +1,18 @@
-﻿import time, json, math, hashlib, re, datetime
+﻿import datetime
+import hashlib
+import json
+import math
+import re
+import time
 from pathlib import Path
 from typing import List, Dict
-import requests
+
+import faiss
 import fitz  # PyMuPDF
-from transformers import AutoTokenizer
+import requests
+import torch
 from sentence_transformers import SentenceTransformer
-import torch, faiss
-import numpy as np
+from transformers import AutoTokenizer
 
 BASE    = Path(__file__).resolve().parent
 DATA    = BASE / "data"
@@ -21,9 +27,9 @@ PAGES_OUT   = PROC / "pages.jsonl"
 CHUNKS_OUT  = PROC / "chunks.jsonl"
 CHUNKED_IDS = PROC / "chunks.done"
 
-FAISS_INDEX_PATH  = INDEXED / "faiss.index"
-SIDE_CAR_PATH     = INDEXED / "chunk_meta.jsonl"
-MANIFEST_PATH     = INDEXED / "manifest.json"
+FAISS_INDEX_PATH = INDEXED / "faiss.index"
+SIDE_CAR_PATH    = INDEXED / "chunk_meta.jsonl"
+MANIFEST_PATH    = INDEXED / "manifest.json"
 
 PAGE_BREAK = "\n\n<<<PAGE_BREAK>>>\n\n"
 
@@ -32,11 +38,11 @@ META.mkdir(parents=True, exist_ok=True)
 PROC.mkdir(parents=True, exist_ok=True)
 INDEXED.mkdir(parents=True, exist_ok=True)
 
-PRODUCE_PAGES = True
+PRODUCE_DEBUG_PAGES = False
 
 ARXIV_API = "http://export.arxiv.org/api/query"
 
-EMBEDDING_TOKENIZER = "sentence-transformers/all-MiniLM-L6-v2"
+EMBED_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 CHUNK_SIZE   = 256
 OVERLAP_FRAC = 0.20 #20%
 MIN_CHARS    = 40
@@ -46,7 +52,7 @@ NORMALIZE   = True                      # cosine via IP when True
 
 def load_tokenizer():
     # use_fast=True gives us a performant Rust tokenizer
-    tok = AutoTokenizer.from_pretrained(EMBEDDING_TOKENIZER, use_fast=True)
+    tok = AutoTokenizer.from_pretrained(EMBED_MODEL, use_fast=True)
 
     max_len = getattr(tok, "model_max_length", None)
     if isinstance(max_len, int) and 0 < max_len < CHUNK_SIZE:
@@ -84,8 +90,6 @@ def chunk_page(tok,
                page_text: str,
                *,
                doc_id: str,
-               title: str,
-               year: str,
                page_no: int,
                chunk_size=CHUNK_SIZE,
                overlap_frac=OVERLAP_FRAC) -> List[Dict]:
@@ -101,17 +105,10 @@ def chunk_page(tok,
             continue
 
         out.append({
-            "chunk_id":    f"{doc_id}::p{page_no}::c{cid}",
-            "doc_id":      doc_id,
-            "title":       title,
-            "year":        year,
-            "page_start":  page_no,
-            "page_end":    page_no,
-            "token_start": start,
-            "token_end":   end,
-            "token_count": end - start,
-            "char_count":  len(text),
-            "text":        text,
+            "chunk_id": f"{doc_id}::p{page_no}::c{cid}",
+            "doc_id":   doc_id,
+            "page":     page_no,
+            "text":     text,
         })
 
         cid += 1
@@ -120,8 +117,6 @@ def chunk_page(tok,
 
 def chunk_document(tok, doc: Dict) -> List[Dict]:
     pages  = doc["text"].split(PAGE_BREAK)
-    title  = doc.get("title") or ""
-    year   = (doc.get("published") or "")[:4]
     doc_id = doc["doc_id"]
 
     all_chunks = []
@@ -131,7 +126,7 @@ def chunk_document(tok, doc: Dict) -> List[Dict]:
         if not page_text:
             continue
 
-        page_chunks = chunk_page(tok, page_text, doc_id=doc_id, title=title, year=year, page_no=idx)
+        page_chunks = chunk_page(tok, page_text, doc_id=doc_id, page_no=idx)
         all_chunks.extend(page_chunks)
 
     return all_chunks
@@ -154,15 +149,6 @@ def extract_arxiv_id(id_field: str) -> str:
     # arXiv gives IDs like "http://arxiv.org/abs/xxxx.19478v1"
     return id_field.strip().split("/")[-1]
 
-def sha1_of_file(path: Path) -> str:
-    h = hashlib.sha1()
-
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1<<20), b""):
-            h.update(chunk)
-
-    return h.hexdigest()
-
 _whitespace_re = re.compile(r"[ \t\f\v]+")
 def normalize_text(s: str) -> str:
     # collapse excessive spaces, but keep newlines (paragraphs)
@@ -172,6 +158,13 @@ def normalize_text(s: str) -> str:
     # collapse super-long runs of blank lines
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
     return s
+
+def normalize_title(s: str | None) -> str:
+    if not s:
+        return ""
+
+    # Collapse all whitespace (including \r, \n, tabs) to single spaces.
+    return " ".join(s.replace("\r", "\n").split())
 
 def safe_name(s: str) -> str:
     return "".join(c if c.isalnum() or c in "-_." else "_" for c in s)[:128]
@@ -218,7 +211,7 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
 
             out.append({
                 "id":               entry.id,
-                "title":            entry.title.strip(),
+                "title":            normalize_title(entry.title),
                 "authors":          [a.name for a in getattr(entry, "authors", [])],
                 "published":        entry.published,
                 "updated":          getattr(entry, "updated", entry.published),
@@ -226,7 +219,7 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
                 "pdf_url":          pdf_url,
                 "primary_category": entry.tags[0]["term"] if entry.tags else None,
             })
-        time.sleep(1)  # be polite
+        time.sleep(3)  # be polite
 
     return out[:total]
 
@@ -282,8 +275,17 @@ def load_seen_doc_ids() -> set[str]:
 
     return seen
 
+def _load_doc_titles() -> dict[str, str]:
+    m = {}
+
+    if DOCS_OUT.exists():
+        with DOCS_OUT.open(encoding="utf-8") as f:
+            for line in f:
+                d = json.loads(line)
+                m[d["doc_id"]] = d.get("title") or ""
+    return m
+
 def _iter_chunks():
-    """Yield (text, minimal_meta) in file order."""
     with CHUNKS_OUT.open(encoding="utf-8") as f:
         for line in f:
             ch = json.loads(line)
@@ -295,26 +297,14 @@ def _iter_chunks():
             yield txt, {
                 "chunk_id": ch["chunk_id"],
                 "doc_id":   ch.get("doc_id"),
-                "title":    ch.get("title"),
-                "page":     ch.get("page_start"),
+                "page":     ch.get("page"),
             }
 
 def _load_embedder():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = SentenceTransformer(EMBEDDING_TOKENIZER, device=device)
+    model = SentenceTransformer(EMBED_MODEL, device=device)
 
     return model
-
-def _embed(model, texts):
-    vecs = model.encode(texts,
-                        batch_size=BATCH,
-                        convert_to_numpy=True,
-                        normalize_embeddings=False,
-                        show_progress_bar=False).astype("float32")
-    if NORMALIZE:
-        norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-12
-        vecs = vecs / norms
-    return vecs
 
 def run_faiss():
     if not CHUNKS_OUT.exists():
@@ -331,6 +321,8 @@ def run_faiss():
     index = None
     total = 0
     dim   = None
+
+    titles = _load_doc_titles()
 
     def flush(buf_txt: list[str], buf_meta: list[dict]):
         nonlocal index, dim, total
@@ -352,7 +344,10 @@ def run_faiss():
 
         index.add(vecs)
 
-        for m in buf_meta:
+        for m, t in zip(buf_meta, buf_txt):
+            # attach title and preview
+            m["title"]   = titles.get(m["doc_id"], "")
+            m["preview"] = t[:300].replace("\n", " ")
             sidecar.write(json.dumps(m, ensure_ascii=False) + "\n")
 
         total += len(buf_txt)
@@ -377,7 +372,7 @@ def run_faiss():
     faiss.write_index(index, str(FAISS_INDEX_PATH))
     MANIFEST_PATH.write_text(json.dumps({
         "created_at":    datetime.datetime.utcnow().isoformat() + "Z",
-        "embed_model":   EMBEDDING_TOKENIZER,
+        "embed_model":   EMBED_MODEL,
         "metric":        "cosine",
         "count":         total,
         "dim":           dim,
@@ -397,7 +392,7 @@ def run_extract(limit: int | None = None):
     seen_doc_ids = load_seen_doc_ids()
 
     with DOCS_OUT.open("a", encoding="utf-8") as doc_f:
-        page_f = PAGES_OUT.open("a", encoding="utf-8") if PRODUCE_PAGES else None
+        page_f = PAGES_OUT.open("a", encoding="utf-8") if PRODUCE_DEBUG_PAGES else None
         try:
             n_new = 0
             for line in lines:
@@ -425,10 +420,8 @@ def run_extract(limit: int | None = None):
                     "title":            rec.get("title"),
                     "authors":          rec.get("authors"),
                     "published":        rec.get("published"),
-                    "updated":          rec.get("updated"),
                     "primary_category": rec.get("primary_category"),
                     "n_pages":          len(pages),
-                    "pdf_sha1":         sha1_of_file(pdf_path),
                     "source_pdf":       str(pdf_path),
                     "text":             full_text,
                     "created_at":       datetime.datetime.utcnow().isoformat() + "Z",
@@ -482,7 +475,6 @@ def run_chunk(limit_docs: int | None = None):
 
             chunks = chunk_document(tok, doc)
             for ch in chunks:
-                ch["created_at"] = datetime.datetime.utcnow().isoformat() + "Z"
                 out_f.write(json.dumps(ch, ensure_ascii=False) + "\n")
 
             append_chunked_id(doc_id)
@@ -536,7 +528,7 @@ def _load_index_and_sidecar():
     return idx, sidecar
 
 def _load_query_model():
-    model_name = EMBEDDING_TOKENIZER
+    model_name = EMBED_MODEL
 
     try:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -562,22 +554,10 @@ def search_local(query: str, k: int = 5, with_text: bool = True):
             m = sidecar[i]
             metas.append({"rank": len(metas)+1, "score": float(s), **m})
 
-    previews = {}
-    if with_text and metas:
-        wanted = {m["chunk_id"] for m in metas}
-        with CHUNKS_OUT.open(encoding="utf-8") as f:
-            for line in f:
-                ch = json.loads(line)
-                cid = ch.get("chunk_id")
-                if cid in wanted:
-                    previews[cid] = (ch.get("text") or "")[:300].replace("\n", " ")
-                    if len(previews) == len(wanted):
-                        break
-
     # print results
     print(f'\nQuery: "{query}"  (top {k})')
     for m in metas:
-        prev = f' — "{previews.get(m["chunk_id"], "")}…"' if with_text else ""
+        prev = f' — "{m.get("preview", "")}…"' if with_text else ""
         print(f"{m['rank']:>2}. score={m['score']:.3f}  p{m.get('page')}  {m.get('title')}{prev}")
 
     return metas
