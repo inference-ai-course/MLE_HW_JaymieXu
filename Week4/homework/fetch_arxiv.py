@@ -4,12 +4,16 @@ from typing import List, Dict
 import requests
 import fitz  # PyMuPDF
 from transformers import AutoTokenizer
+from sentence_transformers import SentenceTransformer
+import torch, faiss
+import numpy as np
 
-BASE = Path(__file__).resolve().parent
-DATA = BASE / "data"
-RAW  = DATA / "raw_pdfs"
-META = DATA / "metadata"
-PROC = DATA / "processed"
+BASE    = Path(__file__).resolve().parent
+DATA    = BASE / "data"
+RAW     = DATA / "raw_pdfs"
+META    = DATA / "metadata"
+PROC    = DATA / "processed"
+INDEXED = BASE / "data" / "index"
 
 META_FILE   = META / "arxiv_metadata.jsonl"
 DOCS_OUT    = PROC / "documents.jsonl"
@@ -17,20 +21,28 @@ PAGES_OUT   = PROC / "pages.jsonl"
 CHUNKS_OUT  = PROC / "chunks.jsonl"
 CHUNKED_IDS = PROC / "chunks.done"
 
+FAISS_INDEX_PATH  = INDEXED / "faiss.index"
+SIDE_CAR_PATH     = INDEXED / "chunk_meta.jsonl"
+MANIFEST_PATH     = INDEXED / "manifest.json"
+
 PAGE_BREAK = "\n\n<<<PAGE_BREAK>>>\n\n"
 
 RAW.mkdir(parents=True, exist_ok=True)
 META.mkdir(parents=True, exist_ok=True)
 PROC.mkdir(parents=True, exist_ok=True)
+INDEXED.mkdir(parents=True, exist_ok=True)
 
 PRODUCE_PAGES = True
 
 ARXIV_API = "http://export.arxiv.org/api/query"
 
 EMBEDDING_TOKENIZER = "sentence-transformers/all-MiniLM-L6-v2"
-CHUNK_SIZE   = 512
+CHUNK_SIZE   = 256
 OVERLAP_FRAC = 0.20 #20%
 MIN_CHARS    = 40
+
+BATCH       = 8                         # adjust to your VRAM/CPU
+NORMALIZE   = True                      # cosine via IP when True
 
 def load_tokenizer():
     # use_fast=True gives us a performant Rust tokenizer
@@ -270,6 +282,113 @@ def load_seen_doc_ids() -> set[str]:
 
     return seen
 
+def _iter_chunks():
+    """Yield (text, minimal_meta) in file order."""
+    with CHUNKS_OUT.open(encoding="utf-8") as f:
+        for line in f:
+            ch = json.loads(line)
+            txt = (ch.get("text") or "").strip()
+
+            if not txt:
+                continue
+
+            yield txt, {
+                "chunk_id": ch["chunk_id"],
+                "doc_id":   ch.get("doc_id"),
+                "title":    ch.get("title"),
+                "page":     ch.get("page_start"),
+            }
+
+def _load_embedder():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = SentenceTransformer(EMBEDDING_TOKENIZER, device=device)
+
+    return model
+
+def _embed(model, texts):
+    vecs = model.encode(texts,
+                        batch_size=BATCH,
+                        convert_to_numpy=True,
+                        normalize_embeddings=False,
+                        show_progress_bar=False).astype("float32")
+    if NORMALIZE:
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-12
+        vecs = vecs / norms
+    return vecs
+
+def run_faiss():
+    if not CHUNKS_OUT.exists():
+        print(f"[warn] {CHUNKS_OUT} not found. Run chunking first.")
+        return
+
+    # clean rebuild
+    for p in (FAISS_INDEX_PATH, SIDE_CAR_PATH, MANIFEST_PATH):
+        if p.exists():
+            p.unlink()
+
+    model = _load_embedder()  # uses CUDA if available
+
+    index = None
+    total = 0
+    dim   = None
+
+    def flush(buf_txt: list[str], buf_meta: list[dict]):
+        nonlocal index, dim, total
+
+        if not buf_txt:
+            return
+
+        vecs = model.encode(
+            buf_txt,
+            batch_size=BATCH,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+            normalize_embeddings=True,  # cosine: L2-normalize in model
+        ).astype("float32")
+
+        if index is None:
+            dim = vecs.shape[1]
+            index = faiss.IndexFlatIP(dim)  # cosine via IP on normalized vectors
+
+        index.add(vecs)
+
+        for m in buf_meta:
+            sidecar.write(json.dumps(m, ensure_ascii=False) + "\n")
+
+        total += len(buf_txt)
+        buf_txt.clear(); buf_meta.clear()
+
+    with SIDE_CAR_PATH.open("w", encoding="utf-8") as sidecar:
+        buf_txt, buf_meta = [], []
+
+        for txt, meta in _iter_chunks():
+            buf_txt.append(txt)
+            buf_meta.append(meta)
+
+            if len(buf_txt) >= BATCH:
+                flush(buf_txt, buf_meta)
+        # flush tail
+        flush(buf_txt, buf_meta)
+
+    if index is None:
+        print("[warn] No chunks to index.")
+        return
+
+    faiss.write_index(index, str(FAISS_INDEX_PATH))
+    MANIFEST_PATH.write_text(json.dumps({
+        "created_at":    datetime.datetime.utcnow().isoformat() + "Z",
+        "embed_model":   EMBEDDING_TOKENIZER,
+        "metric":        "cosine",
+        "count":         total,
+        "dim":           dim,
+        "chunks_source": str(CHUNKS_OUT),
+        "sidecar":       str(SIDE_CAR_PATH),
+    }, indent=2), encoding="utf-8")
+
+    print(f"[OK] FAISS built: {total} vecs, dim={dim}")
+    print(f"      index  → {FAISS_INDEX_PATH}")
+    print(f"      sidecar→ {SIDE_CAR_PATH}")
+
 def run_extract(limit: int | None = None):
     lines = META_FILE.read_text(encoding="utf-8").splitlines()
     if limit is not None:
@@ -345,8 +464,8 @@ def run_chunk(limit_docs: int | None = None):
     if limit_docs is not None:
         lines = lines[:limit_docs]
 
-    already = load_chunked_ids()
-    n_docs = 0
+    already  = load_chunked_ids()
+    n_docs   = 0
     n_chunks = 0
 
     CHUNKS_OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -407,10 +526,77 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
             mf.write(json.dumps(rec_out, ensure_ascii=False) + "\n")
             print(f"[{'OK' if ok else '--'}] {rec_out['title']}")
 
+def _load_index_and_sidecar():
+    idx     = faiss.read_index(str(FAISS_INDEX_PATH))
+    sidecar = [json.loads(l) for l in SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()]
+
+    # quick consistency check
+    if idx.ntotal != len(sidecar):
+        print(f"[warn] index has {idx.ntotal} vecs but sidecar has {len(sidecar)} lines.")
+    return idx, sidecar
+
+def _load_query_model():
+    model_name = EMBEDDING_TOKENIZER
+
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        model_name = manifest.get("embed_model", model_name)
+    except Exception:
+        pass
+
+    return SentenceTransformer(model_name)
+
+def search_local(query: str, k: int = 5, with_text: bool = True):
+    idx, sidecar = _load_index_and_sidecar()
+    model        = _load_query_model()
+
+    # embed query; normalize so IP == cosine (matches how we built the index)
+    q = model.encode([query], convert_to_numpy=True, normalize_embeddings=True).astype("float32")
+    scores, ids = idx.search(q, k)
+    ids, scores = ids[0].tolist(), scores[0].tolist()
+
+    # map result ids -> sidecar meta
+    metas = []
+    for i, s in zip(ids, scores):
+        if 0 <= i < len(sidecar):
+            m = sidecar[i]
+            metas.append({"rank": len(metas)+1, "score": float(s), **m})
+
+    previews = {}
+    if with_text and metas:
+        wanted = {m["chunk_id"] for m in metas}
+        with CHUNKS_OUT.open(encoding="utf-8") as f:
+            for line in f:
+                ch = json.loads(line)
+                cid = ch.get("chunk_id")
+                if cid in wanted:
+                    previews[cid] = (ch.get("text") or "")[:300].replace("\n", " ")
+                    if len(previews) == len(wanted):
+                        break
+
+    # print results
+    print(f'\nQuery: "{query}"  (top {k})')
+    for m in metas:
+        prev = f' — "{previews.get(m["chunk_id"], "")}…"' if with_text else ""
+        print(f"{m['rank']:>2}. score={m['score']:.3f}  p{m.get('page')}  {m.get('title')}{prev}")
+
+    return metas
+
 def main():
-    run_fetch_arxiv(5)
-    run_extract(limit=None)
-    run_chunk(limit_docs=None)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--search", type=str, help="run a quick local search")
+    ap.add_argument("-k", type=int, default=3)
+    args, _ = ap.parse_known_args()
+
+    if args.search:
+        # TEST: python -X utf8 fetch_arxiv.py --search "transformer attention mechanism" -k 3
+        search_local(args.search, k=args.k, with_text=True)
+    else:
+        run_fetch_arxiv(5)
+        run_extract(limit=None)
+        run_chunk(limit_docs=None)
+        run_faiss()
 
 if __name__ == "__main__":
     main()
