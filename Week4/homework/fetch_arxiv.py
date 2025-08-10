@@ -5,7 +5,7 @@ import math
 import re
 import time
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any, Iterator
 
 import faiss
 import fitz  # PyMuPDF
@@ -13,6 +13,8 @@ import requests
 import torch
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
+
+from urllib.parse import urlencode
 
 BASE    = Path(__file__).resolve().parent
 DATA    = BASE / "data"
@@ -44,13 +46,14 @@ ARXIV_API = "http://export.arxiv.org/api/query"
 
 EMBED_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 CHUNK_SIZE   = 256
-OVERLAP_FRAC = 0.20 #20%
+OVERLAP_FRAC = 0.20  # 20%
 MIN_CHARS    = 40
 
 BATCH       = 8                         # adjust to your VRAM/CPU
 NORMALIZE   = True                      # cosine via IP when True
 
-def load_tokenizer():
+
+def load_tokenizer() -> Any:
     # use_fast=True gives us a performant Rust tokenizer
     tok = AutoTokenizer.from_pretrained(EMBED_MODEL, use_fast=True)
 
@@ -61,12 +64,15 @@ def load_tokenizer():
 
     return tok
 
+
 def tokenize(tok, text: str) -> List[int]:
     return tok.encode(text, add_special_tokens=False)
+
 
 def detokenize(tok, ids: List[int]) -> str:
     # reconstruct readable text for retrieval UI/debugging
     return tok.decode(ids, skip_special_tokens=True)
+
 
 def make_windows(token_ids: List[int], chunk_size: int, overlap_frac: float):
     overlap = int(round(chunk_size * overlap_frac))
@@ -85,6 +91,7 @@ def make_windows(token_ids: List[int], chunk_size: int, overlap_frac: float):
             break
 
         start = start + step
+
 
 def chunk_page(tok,
                page_text: str,
@@ -115,6 +122,7 @@ def chunk_page(tok,
 
     return out
 
+
 def chunk_document(tok, doc: Dict) -> List[Dict]:
     pages  = doc["text"].split(PAGE_BREAK)
     doc_id = doc["doc_id"]
@@ -131,6 +139,7 @@ def chunk_document(tok, doc: Dict) -> List[Dict]:
 
     return all_chunks
 
+
 def load_chunked_ids() -> set[str]:
     done = set()
 
@@ -141,15 +150,20 @@ def load_chunked_ids() -> set[str]:
 
     return done
 
+
 def append_chunked_id(doc_id: str):
     with CHUNKED_IDS.open("a", encoding="utf-8") as f:
         f.write(doc_id + "\n")
+
 
 def extract_arxiv_id(id_field: str) -> str:
     # arXiv gives IDs like "http://arxiv.org/abs/xxxx.19478v1"
     return id_field.strip().split("/")[-1]
 
+
 _whitespace_re = re.compile(r"[ \t\f\v]+")
+
+
 def normalize_text(s: str) -> str:
     # collapse excessive spaces, but keep newlines (paragraphs)
     s = s.replace("\r\n", "\n").replace("\r", "\n")
@@ -159,6 +173,7 @@ def normalize_text(s: str) -> str:
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
     return s
 
+
 def normalize_title(s: str | None) -> str:
     if not s:
         return ""
@@ -166,19 +181,22 @@ def normalize_title(s: str | None) -> str:
     # Collapse all whitespace (including \r, \n, tabs) to single spaces.
     return " ".join(s.replace("\r", "\n").split())
 
+
 def safe_name(s: str) -> str:
     return "".join(c if c.isalnum() or c in "-_." else "_" for c in s)[:128]
+
 
 def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dict]:
     import feedparser
 
     out = []
-    pages = math.ceil(total / per_request) # Ceil so we do not end up requesting fraction number of PDFs
+    pages = math.ceil(total / per_request)  # Ceil so we do not end up requesting fraction number of PDFs
 
     # Request chunks
     for i in range(pages):
         start = i * per_request
-        n = min(per_request, total - start) # Min should be (total - start) on the last run if total and per_request do not nicely add up
+        # Min should be (total - start) on the last run if total and per_request do not nicely add up
+        n = min(per_request, total - start)
 
         params = {
             "search_query": query,
@@ -188,9 +206,8 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
             "sortOrder":    "descending",
         }
 
-        feed = feedparser.parse(
-            ARXIV_API + "?" + "&".join(f"{k}={v}" for k, v in params.items())
-        )
+        qs = urlencode(params)
+        feed = feedparser.parse(f"{ARXIV_API}?{qs}")
 
         for entry in feed.entries:
             pdf_url = None
@@ -205,7 +222,7 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
                     pdf_url = link.href
                     break
 
-                 # otherwise remember the FIRST pdf we saw (don’t overwrite later)
+                # otherwise remember the FIRST pdf we saw (don’t overwrite later)
                 if pdf_url is None:
                     pdf_url = link.href
 
@@ -223,6 +240,7 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
 
     return out[:total]
 
+
 def download_pdf(url: str, dest: Path, retries: int = 3) -> bool:
     # Check if file already exists and not corrupted
     if dest.exists() and dest.stat().st_size > 0:
@@ -233,7 +251,7 @@ def download_pdf(url: str, dest: Path, retries: int = 3) -> bool:
             with requests.get(url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 with open(dest, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=1<<15):
+                    for chunk in r.iter_content(chunk_size=1 << 15):
                         if chunk:
                             f.write(chunk)
 
@@ -250,6 +268,7 @@ def download_pdf(url: str, dest: Path, retries: int = 3) -> bool:
 
     return False
 
+
 def extract_pages(pdf_path: Path) -> list[str]:
     pages = []
 
@@ -264,6 +283,7 @@ def extract_pages(pdf_path: Path) -> list[str]:
 
     return pages
 
+
 def load_seen_doc_ids() -> set[str]:
     seen = set()
     if DOCS_OUT.exists():
@@ -275,6 +295,7 @@ def load_seen_doc_ids() -> set[str]:
 
     return seen
 
+
 def _load_doc_titles() -> dict[str, str]:
     m = {}
 
@@ -285,7 +306,8 @@ def _load_doc_titles() -> dict[str, str]:
                 m[d["doc_id"]] = d.get("title") or ""
     return m
 
-def _iter_chunks():
+
+def _iter_chunks() -> Iterator[tuple[str, dict[str, Any]]]:
     with CHUNKS_OUT.open(encoding="utf-8") as f:
         for line in f:
             ch = json.loads(line)
@@ -300,13 +322,15 @@ def _iter_chunks():
                 "page":     ch.get("page"),
             }
 
-def _load_embedder():
+
+def _load_embedder() -> SentenceTransformer:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = SentenceTransformer(EMBED_MODEL, device=device)
 
     return model
 
-def run_faiss():
+
+def run_faiss() -> None:
     if not CHUNKS_OUT.exists():
         print(f"[warn] {CHUNKS_OUT} not found. Run chunking first.")
         return
@@ -318,20 +342,20 @@ def run_faiss():
 
     model = _load_embedder()  # uses CUDA if available
 
-    index = None
+    index: faiss.Index | None = None
     total = 0
     dim   = None
 
     titles = _load_doc_titles()
 
-    def flush(buf_txt: list[str], buf_meta: list[dict]):
+    def flush(flush_buf_txt: list[str], flush_buf_meta: list[dict]):
         nonlocal index, dim, total
 
-        if not buf_txt:
+        if not flush_buf_txt:
             return
 
         vecs = model.encode(
-            buf_txt,
+            flush_buf_txt,
             batch_size=BATCH,
             convert_to_numpy=True,
             show_progress_bar=False,
@@ -344,14 +368,15 @@ def run_faiss():
 
         index.add(vecs)
 
-        for m, t in zip(buf_meta, buf_txt):
+        for m, t in zip(flush_buf_meta, flush_buf_txt):
             # attach title and preview
             m["title"]   = titles.get(m["doc_id"], "")
             m["preview"] = t[:300].replace("\n", " ")
             sidecar.write(json.dumps(m, ensure_ascii=False) + "\n")
 
-        total += len(buf_txt)
-        buf_txt.clear(); buf_meta.clear()
+        total += len(flush_buf_txt)
+        flush_buf_txt.clear()
+        flush_buf_meta.clear()
 
     with SIDE_CAR_PATH.open("w", encoding="utf-8") as sidecar:
         buf_txt, buf_meta = [], []
@@ -371,7 +396,7 @@ def run_faiss():
 
     faiss.write_index(index, str(FAISS_INDEX_PATH))
     MANIFEST_PATH.write_text(json.dumps({
-        "created_at":    datetime.datetime.utcnow().isoformat() + "Z",
+        "created_at":    datetime.datetime.now().isoformat(),
         "embed_model":   EMBED_MODEL,
         "metric":        "cosine",
         "count":         total,
@@ -383,6 +408,7 @@ def run_faiss():
     print(f"[OK] FAISS built: {total} vecs, dim={dim}")
     print(f"      index  → {FAISS_INDEX_PATH}")
     print(f"      sidecar→ {SIDE_CAR_PATH}")
+
 
 def run_extract(limit: int | None = None):
     lines = META_FILE.read_text(encoding="utf-8").splitlines()
@@ -424,7 +450,7 @@ def run_extract(limit: int | None = None):
                     "n_pages":          len(pages),
                     "source_pdf":       str(pdf_path),
                     "text":             full_text,
-                    "created_at":       datetime.datetime.utcnow().isoformat() + "Z",
+                    "created_at":       datetime.datetime.now().isoformat(),
                 }
                 doc_f.write(json.dumps(out_doc, ensure_ascii=False) + "\n")
 
@@ -449,6 +475,7 @@ def run_extract(limit: int | None = None):
         finally:
             if page_f:
                 page_f.close()
+
 
 def run_chunk(limit_docs: int | None = None):
     tok = load_tokenizer()
@@ -486,6 +513,7 @@ def run_chunk(limit_docs: int | None = None):
 
     print(f"Done chunk. new_docs={n_docs}  new_chunks={n_chunks} → {CHUNKS_OUT}")
 
+
 def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL"):
     results = arxiv_search(query, total=total, per_request=per_request)
 
@@ -518,16 +546,18 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
             mf.write(json.dumps(rec_out, ensure_ascii=False) + "\n")
             print(f"[{'OK' if ok else '--'}] {rec_out['title']}")
 
-def _load_index_and_sidecar():
+
+def _load_index_and_sidecar() -> tuple[faiss.Index, list[Any]]:
     idx     = faiss.read_index(str(FAISS_INDEX_PATH))
-    sidecar = [json.loads(l) for l in SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()]
+    sidecar = [json.loads(line) for line in SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()]
 
     # quick consistency check
     if idx.ntotal != len(sidecar):
         print(f"[warn] index has {idx.ntotal} vecs but sidecar has {len(sidecar)} lines.")
     return idx, sidecar
 
-def _load_query_model():
+
+def _load_query_model() -> SentenceTransformer:
     model_name = EMBED_MODEL
 
     try:
@@ -537,6 +567,7 @@ def _load_query_model():
         pass
 
     return SentenceTransformer(model_name)
+
 
 def search_local(query: str, k: int = 5, with_text: bool = True):
     idx, sidecar = _load_index_and_sidecar()
@@ -562,7 +593,8 @@ def search_local(query: str, k: int = 5, with_text: bool = True):
 
     return metas
 
-def main():
+
+def main() -> None:
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--search", type=str, help="run a quick local search")
@@ -578,5 +610,7 @@ def main():
         run_chunk(limit_docs=None)
         run_faiss()
 
+
 if __name__ == "__main__":
     main()
+    
