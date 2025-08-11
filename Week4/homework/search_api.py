@@ -35,7 +35,7 @@ class SearchHit(BaseModel):
     doc_id:   Optional[str] = None
     page:     Optional[int] = None
     title:    Optional[str] = None
-    preview:  Optional[str] = None
+    text:     Optional[str] = None
 
 
 class SearchResponse(BaseModel):
@@ -85,6 +85,18 @@ async def lifespan(app: FastAPI):
         json.loads(line) for line in cfg.SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()
     ]
 
+    # build an in-memory map for full chunk text (fast lookups per request)
+    chunk_text: Dict[str, str] = {}
+
+    with cfg.CHUNKS_OUT.open(encoding="utf-8") as f:
+        for line in f:
+            ch  = json.loads(line)
+            cid = ch.get("chunk_id")
+            txt = ch.get("text")
+
+            if cid and txt:
+                chunk_text[cid] = txt
+
     # quick consistency check (warn only)
     if index.ntotal != len(side):
         print(f"[warn] FAISS vectors = {index.ntotal}, sidecar lines = {len(side)}. "
@@ -92,11 +104,12 @@ async def lifespan(app: FastAPI):
 
     # stash in app.state for fast access
     state = cast(Any, getattr(app, "state"))
-    state.model  = model
-    state.index  = index
-    state.side   = side
-    state.metric = metric
-    state.device = device
+    state.model      = model
+    state.index      = index
+    state.side       = side
+    state.chunk_text = chunk_text
+    state.metric     = metric
+    state.device     = device
 
     print(f"[startup] model={model_name} device={device} vectors={index.ntotal} metric={metric}")
     yield
@@ -123,7 +136,12 @@ def _embed_query(model: SentenceTransformer, text: str) -> np.ndarray:
     return vec
 
 
-def _format_hits(ids: np.ndarray, scores: np.ndarray, side: List[dict], k: int) -> List[SearchHit]:
+def _format_hits(
+        ids: np.ndarray,
+        scores: np.ndarray,
+        side: List[dict],
+        k: int,
+        chunk_text: Dict[str, str]) -> List[SearchHit]:
     out: List[SearchHit] = []
     id_row               = ids[0].tolist()
     sc_row               = scores[0].tolist()
@@ -142,7 +160,7 @@ def _format_hits(ids: np.ndarray, scores: np.ndarray, side: List[dict], k: int) 
                 doc_id=meta.get("doc_id"),
                 page=meta.get("page"),
                 title=meta.get("title"),
-                preview=meta.get("preview"),
+                text=chunk_text.get(meta.get("chunk_id", ""), None),
             )
         )
 
@@ -177,9 +195,9 @@ def search(req: SearchRequest) -> SearchResponse:
 
     qv          = _embed_query(state.model, req.query)
     scores, ids = state.index.search(qv, req.k)
-    hits        = _format_hits(ids, scores, state.side, req.k)
+    hits        = _format_hits(ids, scores, state.side, req.k, state.chunk_text)
 
-    # Preform cut off
+    # Perform cut off
     hits = [h for h in hits if h.score >= req.min_score][:req.k]
 
     return SearchResponse(query=req.query, k=req.k, hits=hits)

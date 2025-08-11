@@ -334,9 +334,8 @@ def run_faiss() -> None:
         index.add(vecs)
 
         for m, t in zip(flush_buf_meta, flush_buf_txt):
-            # attach title and preview
+            # attach title
             m["title"]   = titles.get(m["doc_id"], "")
-            m["preview"] = t[:300].replace("\n", " ")
             sidecar.write(json.dumps(m, ensure_ascii=False) + "\n")
 
         total += len(flush_buf_txt)
@@ -512,68 +511,11 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
             print(f"[{'OK' if ok else '--'}] {rec_out['title']}")
 
 
-def _load_index_and_sidecar() -> tuple[faiss.Index, list[Any]]:
-    idx     = faiss.read_index(str(cfg.FAISS_INDEX_PATH))
-    sidecar = [json.loads(line) for line in cfg.SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()]
-
-    # quick consistency check
-    if idx.ntotal != len(sidecar):
-        print(f"[warn] index has {idx.ntotal} vecs but sidecar has {len(sidecar)} lines.")
-    return idx, sidecar
-
-
-def _load_query_model() -> SentenceTransformer:
-    model_name = cfg.EMBED_MODEL
-
-    try:
-        manifest = json.loads(cfg.MANIFEST_PATH.read_text(encoding="utf-8"))
-        model_name = manifest.get("embed_model", model_name)
-    except Exception:
-        pass
-
-    return SentenceTransformer(model_name)
-
-
-def search_local(query: str, k: int = 5, with_text: bool = True):
-    idx, sidecar = _load_index_and_sidecar()
-    model        = _load_query_model()
-
-    # embed query; normalize so IP == cosine (matches how we built the index)
-    q = model.encode([query], convert_to_numpy=True, normalize_embeddings=True).astype("float32")
-    scores, ids = idx.search(q, k)
-    ids, scores = ids[0].tolist(), scores[0].tolist()
-
-    # map result ids -> sidecar meta
-    metas = []
-    for i, s in zip(ids, scores):
-        if 0 <= i < len(sidecar):
-            m = sidecar[i]
-            metas.append({"rank": len(metas)+1, "score": float(s), **m})
-
-    # print results
-    print(f'\nQuery: "{query}"  (top {k})')
-    for m in metas:
-        prev = f' — "{m.get("preview", "")}…"' if with_text else ""
-        print(f"{m['rank']:>2}. score={m['score']:.3f}  p{m.get('page')}  {m.get('title')}{prev}")
-
-    return metas
-
-
 def main() -> None:
-    import argparse
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--search", type=str, help="run a quick local search")
-    ap.add_argument("-k", type=int, default=3)
-    args, _ = ap.parse_known_args()
-
-    if args.search:
-        # TEST: python -X utf8 fetch_arxiv.py --search "transformer attention mechanism" -k 3
-        search_local(args.search, k=args.k, with_text=True)
-    else:
-        run_fetch_arxiv(5)
-        run_extract(limit=None)
-        run_chunk(limit_docs=None)
-        run_faiss()
+    run_fetch_arxiv(5)
+    run_extract(limit=None)
+    run_chunk(limit_docs=None)
+    run_faiss()
 
 
 if __name__ == "__main__":
