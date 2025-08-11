@@ -1,7 +1,5 @@
 ﻿import datetime
-import hashlib
 import json
-import math
 import re
 import time
 from pathlib import Path
@@ -147,22 +145,13 @@ def normalize_title(s: str | None) -> str:
     return " ".join(s.replace("\r", "\n").split())
 
 
-def safe_name(s: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in s)[:128]
-
-
 def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dict]:
     import feedparser
+    out: List[Dict] = []
+    start           = 0
 
-    out = []
-    pages = math.ceil(total / per_request)  # Ceil so we do not end up requesting fraction number of PDFs
-
-    # Request chunks
-    for i in range(pages):
-        start = i * per_request
-        # Min should be (total - start) on the last run if total and per_request do not nicely add up
-        n = min(per_request, total - start)
-
+    while len(out) < total:
+        n = min(per_request, total - len(out))
         params = {
             "search_query": query,
             "start":        start,
@@ -174,7 +163,14 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
         qs = urlencode(params)
         feed = feedparser.parse(f"{cfg.ARXIV_API}?{qs}")
 
-        for entry in feed.entries:
+        entries = getattr(feed, "entries", []) or []
+        got = len(entries)
+        if got == 0:
+            # nothing more to fetch
+            break
+
+        for entry in entries:
+            # find a pdf link (prefer rel=related when type=application/pdf)
             pdf_url = None
 
             # PDF find
@@ -201,7 +197,12 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
                 "pdf_url":          pdf_url,
                 "primary_category": entry.tags[0]["term"] if entry.tags else None,
             })
-        time.sleep(3)  # be polite
+
+        # advance by what we actually got
+        start += got
+
+        # be polite to arXiv
+        time.sleep(3)
 
     return out[:total]
 
@@ -237,7 +238,7 @@ def download_pdf(url: str, dest: Path, retries: int = 3) -> bool:
 def extract_pages(pdf_path: Path) -> list[str]:
     pages = []
 
-    with fitz.open(pdf_path) as doc:
+    with fitz.open(pdf_path, filetype="pdf") as doc:
         if doc.is_encrypted:
             return pages
 
@@ -442,12 +443,7 @@ def run_extract(limit: int | None = None):
 
 
 def run_chunk(limit_docs: int | None = None):
-    tok = load_tokenizer()
-    lines = cfg.DOCS_OUT.read_text(encoding="utf-8").splitlines()
-
-    if limit_docs is not None:
-        lines = lines[:limit_docs]
-
+    tok      = load_tokenizer()
     already  = load_chunked_ids()
     n_docs   = 0
     n_chunks = 0
@@ -455,25 +451,29 @@ def run_chunk(limit_docs: int | None = None):
     cfg.CHUNKS_OUT.parent.mkdir(parents=True, exist_ok=True)
 
     with cfg.CHUNKS_OUT.open("a", encoding="utf-8") as out_f:
-        for line in lines:
-            doc = json.loads(line)
-            doc_id = doc.get("doc_id")
+        with cfg.DOCS_OUT.open(encoding="utf-8") as fin:
+            for line in fin:
+                if limit_docs is not None and n_docs >= limit_docs:
+                    break  # stop after we have chunked `limit_docs` number of docs
 
-            if not doc_id or doc_id in already:
-                continue
-            if not doc.get("text"):
-                continue
+                doc = json.loads(line)
+                doc_id = doc.get("doc_id")
 
-            chunks = chunk_document(tok, doc)
-            for ch in chunks:
-                out_f.write(json.dumps(ch, ensure_ascii=False) + "\n")
+                if not doc_id or doc_id in already:
+                    continue
+                if not doc.get("text"):
+                    continue
 
-            append_chunked_id(doc_id)
+                chunks = chunk_document(tok, doc)
+                for ch in chunks:
+                    out_f.write(json.dumps(ch, ensure_ascii=False) + "\n")
 
-            n_docs += 1
-            n_chunks += len(chunks)
+                append_chunked_id(doc_id)
 
-            print(f"[OK] {doc.get('title','(untitled)')[:60]}…  chunks={len(chunks)}")
+                n_docs += 1
+                n_chunks += len(chunks)
+
+                print(f"[OK] {doc.get('title','(untitled)')[:60]}…  chunks={len(chunks)}")
 
     print(f"Done chunk. new_docs={n_docs}  new_chunks={n_chunks} → {cfg.CHUNKS_OUT}")
 
@@ -496,8 +496,9 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
             if rec["id"] in seen_ids:
                 continue
 
-            h = hashlib.md5(rec["id"].encode("utf-8")).hexdigest()[:10]
-            fn = safe_name(f"{rec['title']}_{h}.pdf")
+            arxiv_id = extract_arxiv_id(rec["id"])
+            stem     = arxiv_id.replace("/", "_")
+            fn       = f"{stem}.pdf"
             pdf_path = cfg.RAW / fn
 
             ok = False
@@ -512,7 +513,7 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
 
 
 def main() -> None:
-    run_fetch_arxiv(5)
+    run_fetch_arxiv(50)
     run_extract(limit=None)
     run_chunk(limit_docs=None)
     run_faiss()
