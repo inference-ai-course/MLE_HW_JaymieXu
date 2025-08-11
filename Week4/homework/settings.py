@@ -21,7 +21,8 @@ MANIFEST_PATH    = INDEXED / "manifest.json"
 
 # ----- text & API -----
 PAGE_BREAK = "\n\n<<<PAGE_BREAK>>>\n\n"
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API  = "http://export.arxiv.org/api/query"
+MIN_SCORE  = 0.25   # Bullsh*t cut off score
 
 # Toggle: write pages.jsonl for debugging provenance
 PRODUCE_DEBUG_PAGES = False
