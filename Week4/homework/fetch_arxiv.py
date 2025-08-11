@@ -6,6 +6,7 @@ import re
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Iterator
+from urllib.parse import urlencode
 
 import faiss
 import fitz  # PyMuPDF
@@ -14,52 +15,16 @@ import torch
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
-from urllib.parse import urlencode
-
-BASE    = Path(__file__).resolve().parent
-DATA    = BASE / "data"
-RAW     = DATA / "raw_pdfs"
-META    = DATA / "metadata"
-PROC    = DATA / "processed"
-INDEXED = BASE / "data" / "index"
-
-META_FILE   = META / "arxiv_metadata.jsonl"
-DOCS_OUT    = PROC / "documents.jsonl"
-PAGES_OUT   = PROC / "pages.jsonl"
-CHUNKS_OUT  = PROC / "chunks.jsonl"
-CHUNKED_IDS = PROC / "chunks.done"
-
-FAISS_INDEX_PATH = INDEXED / "faiss.index"
-SIDE_CAR_PATH    = INDEXED / "chunk_meta.jsonl"
-MANIFEST_PATH    = INDEXED / "manifest.json"
-
-PAGE_BREAK = "\n\n<<<PAGE_BREAK>>>\n\n"
-
-RAW.mkdir(parents=True, exist_ok=True)
-META.mkdir(parents=True, exist_ok=True)
-PROC.mkdir(parents=True, exist_ok=True)
-INDEXED.mkdir(parents=True, exist_ok=True)
-
-PRODUCE_DEBUG_PAGES = False
-
-ARXIV_API = "http://export.arxiv.org/api/query"
-
-EMBED_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
-CHUNK_SIZE   = 256
-OVERLAP_FRAC = 0.20  # 20%
-MIN_CHARS    = 40
-
-BATCH       = 8                         # adjust to your VRAM/CPU
-NORMALIZE   = True                      # cosine via IP when True
+import settings as cfg
 
 
 def load_tokenizer() -> Any:
     # use_fast=True gives us a performant Rust tokenizer
-    tok = AutoTokenizer.from_pretrained(EMBED_MODEL, use_fast=True)
+    tok = AutoTokenizer.from_pretrained(cfg.EMBED_MODEL, use_fast=True)
 
     max_len = getattr(tok, "model_max_length", None)
-    if isinstance(max_len, int) and 0 < max_len < CHUNK_SIZE:
-        print(f"[warn] CHUNK_SIZE={CHUNK_SIZE} > tokenizer max={max_len}; "
+    if isinstance(max_len, int) and 0 < max_len < cfg.CHUNK_SIZE:
+        print(f"[warn] CHUNK_SIZE={cfg.CHUNK_SIZE} > tokenizer max={max_len}; "
               f"the embedder may truncate later.")
 
     return tok
@@ -98,8 +63,8 @@ def chunk_page(tok,
                *,
                doc_id: str,
                page_no: int,
-               chunk_size=CHUNK_SIZE,
-               overlap_frac=OVERLAP_FRAC) -> List[Dict]:
+               chunk_size=cfg.CHUNK_SIZE,
+               overlap_frac=cfg.OVERLAP_FRAC) -> List[Dict]:
     ids = tokenize(tok, page_text)
     out = []
     cid = 0
@@ -108,7 +73,7 @@ def chunk_page(tok,
         piece_ids = ids[start:end]
         text = detokenize(tok, piece_ids).strip()
 
-        if len(text) < MIN_CHARS:
+        if len(text) < cfg.MIN_CHARS:
             continue
 
         out.append({
@@ -124,7 +89,7 @@ def chunk_page(tok,
 
 
 def chunk_document(tok, doc: Dict) -> List[Dict]:
-    pages  = doc["text"].split(PAGE_BREAK)
+    pages  = doc["text"].split(cfg.PAGE_BREAK)
     doc_id = doc["doc_id"]
 
     all_chunks = []
@@ -143,8 +108,8 @@ def chunk_document(tok, doc: Dict) -> List[Dict]:
 def load_chunked_ids() -> set[str]:
     done = set()
 
-    if CHUNKED_IDS.exists():
-        for line in CHUNKED_IDS.read_text(encoding="utf-8").splitlines():
+    if cfg.CHUNKED_IDS.exists():
+        for line in cfg.CHUNKED_IDS.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 done.add(line.strip())
 
@@ -152,7 +117,7 @@ def load_chunked_ids() -> set[str]:
 
 
 def append_chunked_id(doc_id: str):
-    with CHUNKED_IDS.open("a", encoding="utf-8") as f:
+    with cfg.CHUNKED_IDS.open("a", encoding="utf-8") as f:
         f.write(doc_id + "\n")
 
 
@@ -207,7 +172,7 @@ def arxiv_search(query: str, total: int = 50, per_request: int = 50) -> List[Dic
         }
 
         qs = urlencode(params)
-        feed = feedparser.parse(f"{ARXIV_API}?{qs}")
+        feed = feedparser.parse(f"{cfg.ARXIV_API}?{qs}")
 
         for entry in feed.entries:
             pdf_url = None
@@ -286,8 +251,8 @@ def extract_pages(pdf_path: Path) -> list[str]:
 
 def load_seen_doc_ids() -> set[str]:
     seen = set()
-    if DOCS_OUT.exists():
-        for line in DOCS_OUT.read_text(encoding="utf-8").splitlines():
+    if cfg.DOCS_OUT.exists():
+        for line in cfg.DOCS_OUT.read_text(encoding="utf-8").splitlines():
             try:
                 seen.add(json.loads(line)["doc_id"])
             except Exception:
@@ -299,8 +264,8 @@ def load_seen_doc_ids() -> set[str]:
 def _load_doc_titles() -> dict[str, str]:
     m = {}
 
-    if DOCS_OUT.exists():
-        with DOCS_OUT.open(encoding="utf-8") as f:
+    if cfg.DOCS_OUT.exists():
+        with cfg.DOCS_OUT.open(encoding="utf-8") as f:
             for line in f:
                 d = json.loads(line)
                 m[d["doc_id"]] = d.get("title") or ""
@@ -308,7 +273,7 @@ def _load_doc_titles() -> dict[str, str]:
 
 
 def _iter_chunks() -> Iterator[tuple[str, dict[str, Any]]]:
-    with CHUNKS_OUT.open(encoding="utf-8") as f:
+    with cfg.CHUNKS_OUT.open(encoding="utf-8") as f:
         for line in f:
             ch = json.loads(line)
             txt = (ch.get("text") or "").strip()
@@ -325,18 +290,18 @@ def _iter_chunks() -> Iterator[tuple[str, dict[str, Any]]]:
 
 def _load_embedder() -> SentenceTransformer:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = SentenceTransformer(EMBED_MODEL, device=device)
+    model = SentenceTransformer(cfg.EMBED_MODEL, device=device)
 
     return model
 
 
 def run_faiss() -> None:
-    if not CHUNKS_OUT.exists():
-        print(f"[warn] {CHUNKS_OUT} not found. Run chunking first.")
+    if not cfg.CHUNKS_OUT.exists():
+        print(f"[warn] {cfg.CHUNKS_OUT} not found. Run chunking first.")
         return
 
     # clean rebuild
-    for p in (FAISS_INDEX_PATH, SIDE_CAR_PATH, MANIFEST_PATH):
+    for p in (cfg.FAISS_INDEX_PATH, cfg.SIDE_CAR_PATH, cfg.MANIFEST_PATH):
         if p.exists():
             p.unlink()
 
@@ -356,7 +321,7 @@ def run_faiss() -> None:
 
         vecs = model.encode(
             flush_buf_txt,
-            batch_size=BATCH,
+            batch_size=cfg.BATCH,
             convert_to_numpy=True,
             show_progress_bar=False,
             normalize_embeddings=True,  # cosine: L2-normalize in model
@@ -378,14 +343,14 @@ def run_faiss() -> None:
         flush_buf_txt.clear()
         flush_buf_meta.clear()
 
-    with SIDE_CAR_PATH.open("w", encoding="utf-8") as sidecar:
+    with cfg.SIDE_CAR_PATH.open("w", encoding="utf-8") as sidecar:
         buf_txt, buf_meta = [], []
 
         for txt, meta in _iter_chunks():
             buf_txt.append(txt)
             buf_meta.append(meta)
 
-            if len(buf_txt) >= BATCH:
+            if len(buf_txt) >= cfg.BATCH:
                 flush(buf_txt, buf_meta)
         # flush tail
         flush(buf_txt, buf_meta)
@@ -394,31 +359,31 @@ def run_faiss() -> None:
         print("[warn] No chunks to index.")
         return
 
-    faiss.write_index(index, str(FAISS_INDEX_PATH))
-    MANIFEST_PATH.write_text(json.dumps({
+    faiss.write_index(index, str(cfg.FAISS_INDEX_PATH))
+    cfg.MANIFEST_PATH.write_text(json.dumps({
         "created_at":    datetime.datetime.now().isoformat(),
-        "embed_model":   EMBED_MODEL,
+        "embed_model":   cfg.EMBED_MODEL,
         "metric":        "cosine",
         "count":         total,
         "dim":           dim,
-        "chunks_source": str(CHUNKS_OUT),
-        "sidecar":       str(SIDE_CAR_PATH),
+        "chunks_source": str(cfg.CHUNKS_OUT),
+        "sidecar":       str(cfg.SIDE_CAR_PATH),
     }, indent=2), encoding="utf-8")
 
     print(f"[OK] FAISS built: {total} vecs, dim={dim}")
-    print(f"      index  → {FAISS_INDEX_PATH}")
-    print(f"      sidecar→ {SIDE_CAR_PATH}")
+    print(f"      index  → {cfg.FAISS_INDEX_PATH}")
+    print(f"      sidecar→ {cfg.SIDE_CAR_PATH}")
 
 
 def run_extract(limit: int | None = None):
-    lines = META_FILE.read_text(encoding="utf-8").splitlines()
+    lines = cfg.META_FILE.read_text(encoding="utf-8").splitlines()
     if limit is not None:
         lines = lines[:limit]
 
     seen_doc_ids = load_seen_doc_ids()
 
-    with DOCS_OUT.open("a", encoding="utf-8") as doc_f:
-        page_f = PAGES_OUT.open("a", encoding="utf-8") if PRODUCE_DEBUG_PAGES else None
+    with cfg.DOCS_OUT.open("a", encoding="utf-8") as doc_f:
+        page_f = cfg.PAGES_OUT.open("a", encoding="utf-8") if cfg.PRODUCE_DEBUG_PAGES else None
         try:
             n_new = 0
             for line in lines:
@@ -440,7 +405,7 @@ def run_extract(limit: int | None = None):
                     print(f"[SKIP] {pdf_path.name} — encrypted or no extractable text")
                     continue
 
-                full_text = PAGE_BREAK.join(pages)
+                full_text = cfg.PAGE_BREAK.join(pages)
                 out_doc = {
                     "doc_id":           arxiv_id,
                     "title":            rec.get("title"),
@@ -470,7 +435,7 @@ def run_extract(limit: int | None = None):
                 n_new += 1
                 print(f"[OK] {pdf_path.name}  pages={len(pages)}")
 
-            print(f"Done extract. new_docs={n_new} → {DOCS_OUT}")
+            print(f"Done extract. new_docs={n_new} → {cfg.DOCS_OUT}")
 
         finally:
             if page_f:
@@ -479,7 +444,7 @@ def run_extract(limit: int | None = None):
 
 def run_chunk(limit_docs: int | None = None):
     tok = load_tokenizer()
-    lines = DOCS_OUT.read_text(encoding="utf-8").splitlines()
+    lines = cfg.DOCS_OUT.read_text(encoding="utf-8").splitlines()
 
     if limit_docs is not None:
         lines = lines[:limit_docs]
@@ -488,9 +453,9 @@ def run_chunk(limit_docs: int | None = None):
     n_docs   = 0
     n_chunks = 0
 
-    CHUNKS_OUT.parent.mkdir(parents=True, exist_ok=True)
+    cfg.CHUNKS_OUT.parent.mkdir(parents=True, exist_ok=True)
 
-    with CHUNKS_OUT.open("a", encoding="utf-8") as out_f:
+    with cfg.CHUNKS_OUT.open("a", encoding="utf-8") as out_f:
         for line in lines:
             doc = json.loads(line)
             doc_id = doc.get("doc_id")
@@ -511,7 +476,7 @@ def run_chunk(limit_docs: int | None = None):
 
             print(f"[OK] {doc.get('title','(untitled)')[:60]}…  chunks={len(chunks)}")
 
-    print(f"Done chunk. new_docs={n_docs}  new_chunks={n_chunks} → {CHUNKS_OUT}")
+    print(f"Done chunk. new_docs={n_docs}  new_chunks={n_chunks} → {cfg.CHUNKS_OUT}")
 
 
 def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL"):
@@ -520,21 +485,21 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
     seen_ids = set()
 
     # Add existing pdfs if this is not first run
-    if META_FILE.exists():
-        for line in META_FILE.read_text(encoding="utf-8").splitlines():
+    if cfg.META_FILE.exists():
+        for line in cfg.META_FILE.read_text(encoding="utf-8").splitlines():
             try:
                 seen_ids.add(json.loads(line)["id"])
             except Exception:
                 pass
 
-    with META_FILE.open("a", encoding="utf-8") as mf:
+    with cfg.META_FILE.open("a", encoding="utf-8") as mf:
         for rec in results:
             if rec["id"] in seen_ids:
                 continue
 
             h = hashlib.md5(rec["id"].encode("utf-8")).hexdigest()[:10]
             fn = safe_name(f"{rec['title']}_{h}.pdf")
-            pdf_path = RAW / fn
+            pdf_path = cfg.RAW / fn
 
             ok = False
             if rec["pdf_url"]:
@@ -548,8 +513,8 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
 
 
 def _load_index_and_sidecar() -> tuple[faiss.Index, list[Any]]:
-    idx     = faiss.read_index(str(FAISS_INDEX_PATH))
-    sidecar = [json.loads(line) for line in SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()]
+    idx     = faiss.read_index(str(cfg.FAISS_INDEX_PATH))
+    sidecar = [json.loads(line) for line in cfg.SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()]
 
     # quick consistency check
     if idx.ntotal != len(sidecar):
@@ -558,10 +523,10 @@ def _load_index_and_sidecar() -> tuple[faiss.Index, list[Any]]:
 
 
 def _load_query_model() -> SentenceTransformer:
-    model_name = EMBED_MODEL
+    model_name = cfg.EMBED_MODEL
 
     try:
-        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = json.loads(cfg.MANIFEST_PATH.read_text(encoding="utf-8"))
         model_name = manifest.get("embed_model", model_name)
     except Exception:
         pass
