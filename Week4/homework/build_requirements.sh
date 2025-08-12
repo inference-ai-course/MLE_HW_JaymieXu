@@ -1,0 +1,1 @@
+pipreqs . --force --encoding=utf-8-sig --savepath requirements.txt
