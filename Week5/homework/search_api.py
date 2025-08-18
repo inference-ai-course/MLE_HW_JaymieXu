@@ -45,6 +45,21 @@ class SearchResponse(BaseModel):
     hits:  List[SearchHit]
 
 
+class KeywordSearchRequest(BaseModel):
+    query:     str = Field(..., description="Keyword search query")
+    k:         int = Field(5, ge=1, le=50, description="Top-k results to return")
+    min_score: float = Field(
+        default=cfg.MIN_FTS_SCORE, ge=0, le=1,
+        description="Minimum FTS5 relevance score"
+    )
+
+
+class KeywordSearchResponse(BaseModel):
+    query: str
+    k:     int
+    hits:  List[SearchHit]
+
+
 # ------------------------------------------------
 # Application lifespan: load once, reuse per call
 # ------------------------------------------------
@@ -96,7 +111,7 @@ async def lifespan(app: FastAPI):
         
     conn.close()
     
-    # CHANGE: Build chunk_text map from SQLite instead of JSONL
+    # Build chunk_text map from SQLite
     chunk_text: Dict[str, str] = {}
     chunks_conn   = sqlite3.connect(cfg.CHUNKS_OUT)
     chunks_cursor = chunks_conn.execute("SELECT chunk_id, text FROM chunks WHERE text IS NOT NULL AND text != ''")
@@ -108,6 +123,18 @@ async def lifespan(app: FastAPI):
             chunk_text[cid] = txt
             
     chunks_conn.close()
+    
+    # Test FTS5 availability and cache connection info
+    fts5_available = False
+    try:
+        test_conn = sqlite3.connect(cfg.CHUNKS_OUT)
+        test_conn.execute("SELECT COUNT(*) FROM chunks_fts LIMIT 1").fetchone()
+        fts5_available = True
+        test_conn.close()
+        print(f"[startup] FTS5 search available")
+        
+    except Exception as e:
+        print(f"[warn] FTS5 not available: {e}")
 
     # quick consistency check (warn only)
     if index.ntotal != len(side):
@@ -116,12 +143,13 @@ async def lifespan(app: FastAPI):
 
     # stash in app.state for fast access
     state = cast(Any, getattr(app, "state"))
-    state.model      = model
-    state.index      = index
-    state.side       = side
-    state.chunk_text = chunk_text
-    state.metric     = metric
-    state.device     = device
+    state.model          = model
+    state.index          = index
+    state.side           = side
+    state.chunk_text     = chunk_text
+    state.metric         = metric
+    state.device         = device
+    state.fts5_available = fts5_available
 
     print(f"[startup] model={model_name} device={device} vectors={index.ntotal} metric={metric}")
     yield
@@ -182,6 +210,65 @@ def _format_hits(
     return out
 
 
+def _keyword_search(query: str, k: int) -> List[Dict[str, Any]]:
+    """Perform FTS5 keyword search on chunks"""
+    conn = sqlite3.connect(cfg.CHUNKS_OUT)
+
+    try:
+        # Use FTS5 MATCH query with rank-based scoring
+        cursor = conn.execute('''
+            SELECT chunk_id, doc_id, text, rank AS fts_score
+            FROM chunks_fts
+            WHERE chunks_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+        ''', (query, k))
+
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'chunk_id':  row[0],
+                'doc_id':    row[1],
+                'text':      row[2],
+                'fts_score': abs(row[3]) if row[3] else 0.0  # Convert negative rank to positive score
+            })
+
+        return results
+
+    finally:
+        conn.close()
+
+
+def _format_keyword_hits(
+        fts_results: List[Dict[str, Any]],
+        side: List[dict],
+        chunk_text: Dict[str, str],
+        k: int) -> List[SearchHit]:
+    """Format FTS5 results into SearchHit objects"""
+    out: List[SearchHit] = []
+
+    # Create lookup map for metadata by chunk_id
+    meta_lookup = {item['chunk_id']: item for item in side}
+
+    for rank, result in enumerate(fts_results[:k], start=1):
+        chunk_id = result['chunk_id']
+        meta     = meta_lookup.get(chunk_id, {})
+
+        out.append(
+            SearchHit(
+                rank=rank,
+                score=result['fts_score'],
+                chunk_id=chunk_id,
+                doc_id=meta.get('doc_id'),
+                page=meta.get('page'),
+                title=meta.get('title'),
+                text=result.get('text')  # FTS5 already returns the text
+            )
+        )
+
+    return out
+
+
 # -----------
 # Endpoints
 # -----------
@@ -213,6 +300,30 @@ def search(req: SearchRequest) -> SearchResponse:
     hits = [h for h in hits if h.score >= req.min_score][:req.k]
 
     return SearchResponse(query=req.query, k=req.k, hits=hits)
+
+
+@app.post("/keyword_search", response_model=KeywordSearchResponse)
+def keyword_search(req: KeywordSearchRequest) -> KeywordSearchResponse:
+    """
+    Keyword-based search using FTS5.
+    - Search chunks using SQLite FTS5 full-text search
+    - Return top-k results ranked by FTS5 relevance score
+    """
+    state = cast(Any, getattr(app, "state"))
+
+    if not state.fts5_available:
+        raise HTTPException(status_code=503, detail="FTS5 search not available. Check your database setup.")
+
+    # Perform FTS5 keyword search
+    fts_results = _keyword_search(req.query, req.k * 2)  # Get extra results for filtering
+
+    # Format results into SearchHit objects
+    hits = _format_keyword_hits(fts_results, state.side, state.chunk_text, req.k)
+
+    # Apply minimum score filter
+    hits = [h for h in hits if h.score >= req.min_score][:req.k]
+
+    return KeywordSearchResponse(query=req.query, k=req.k, hits=hits)
 
 
 # -------------------------
