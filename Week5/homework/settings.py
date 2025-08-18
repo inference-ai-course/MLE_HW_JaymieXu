@@ -37,6 +37,10 @@ MIN_CHARS    = 40
 BATCH       = 8                         # adjust to your VRAM/CPU
 NORMALIZE   = True                      # cosine via IP when True
 
+# ----- FTS5 settings -----
+FTS5_TOKENIZER = "porter"  # Options: simple, porter, unicode61
+MIN_FTS_SCORE = 0.1        # Minimum FTS5 relevance score
+
 # ----- ensure directories exist on import -----
 for p in (DATA, RAW, META, PROC, INDEXED):
     p.mkdir(parents=True, exist_ok=True)

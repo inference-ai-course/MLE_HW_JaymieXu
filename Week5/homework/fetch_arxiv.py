@@ -526,6 +526,19 @@ def run_chunk(limit_docs: int | None = None):
                      ch["text"]
                      )
                 )
+                
+                chunks_conn.execute('''
+                    INSERT INTO chunks_fts (
+                        chunk_id,
+                        doc_id,
+                        text)
+                        VALUES (?, ?, ?)
+                        ''',
+                    (ch["chunk_id"],
+                     ch["doc_id"],
+                     ch["text"]
+                    )
+                  )
 
             append_chunked_id(doc_id)
 
