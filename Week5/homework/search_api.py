@@ -60,6 +60,22 @@ class KeywordSearchResponse(BaseModel):
     hits:  List[SearchHit]
 
 
+class HybridSearchRequest(BaseModel):
+    query:        str   = Field(..., description="Search query for both semantic and keyword search")
+    k:            int   = Field(5, ge=1, le=50, description="Top-k results to return")
+    min_score:    float = Field(default=cfg.MIN_SCORE, ge=0, le=1, description="Minimum semantic score")
+    semantic_k:   int   = Field(10, ge=1, le=100, description="Top-k results from semantic search for fusion")
+    keyword_k:    int   = Field(10, ge=1, le=100, description="Top-k results from keyword search for fusion")
+    rrf_constant: int   = Field(60, ge=1, le=100, description="RRF constant (typically 60)")
+
+
+class HybridSearchResponse(BaseModel):
+    query:  str
+    k:      int
+    hits:   List[SearchHit]  # Reuse existing SearchHit model
+    method: str = "hybrid_rrf"  # ADD: Indicate fusion method used
+
+
 # ------------------------------------------------
 # Application lifespan: load once, reuse per call
 # ------------------------------------------------
@@ -177,11 +193,11 @@ def _embed_query(model: SentenceTransformer, text: str) -> np.ndarray:
 
 
 def _format_hits(
-        ids: np.ndarray,
-        scores: np.ndarray,
-        side: List[dict],
-        k: int,
-        chunk_text: Dict[str, str]) -> List[SearchHit]:
+    ids: np.ndarray,
+    scores: np.ndarray,
+    side: List[dict],
+    k: int,
+    chunk_text: Dict[str, str]) -> List[SearchHit]:
     out: List[SearchHit] = []
     id_row               = ids[0].tolist()
     sc_row               = scores[0].tolist()
@@ -240,10 +256,10 @@ def _keyword_search(query: str, k: int) -> List[Dict[str, Any]]:
 
 
 def _format_keyword_hits(
-        fts_results: List[Dict[str, Any]],
-        side: List[dict],
-        chunk_text: Dict[str, str],
-        k: int) -> List[SearchHit]:
+    fts_results: List[Dict[str, Any]],
+    side: List[dict],
+    chunk_text: Dict[str, str],
+    k: int) -> List[SearchHit]:
     """Format FTS5 results into SearchHit objects"""
     out: List[SearchHit] = []
 
@@ -267,6 +283,60 @@ def _format_keyword_hits(
         )
 
     return out
+
+
+def _reciprocal_rank_fusion(
+    semantic_hits: List[SearchHit],
+    keyword_hits: List[SearchHit],
+    k: int,
+    rrf_constant: int = 60) -> List[SearchHit]:
+    """
+    Combine semantic and keyword search results using Reciprocal Rank Fusion (RRF).
+    RRF score for item = sum(1 / (rank + rrf_constant)) across all result sets
+    """
+    rrf_scores = {}
+    chunk_metadata = {}  # Store metadata for final results
+
+    # Process semantic search results (rank-based scoring)
+    for rank, hit in enumerate(semantic_hits, start=1):
+        chunk_id             = hit.chunk_id
+        rrf_score            = 1.0 / (rank + rrf_constant)
+        rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0.0) + rrf_score
+
+        # Store metadata (use semantic hit data as primary)
+        if chunk_id not in chunk_metadata:
+            chunk_metadata[chunk_id] = hit
+
+    # Process keyword search results (rank-based scoring)
+    for rank, hit in enumerate(keyword_hits, start=1):
+        chunk_id             = hit.chunk_id
+        rrf_score            = 1.0 / (rank + rrf_constant)
+        rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0.0) + rrf_score
+
+        # Store metadata if not already stored
+        if chunk_id not in chunk_metadata:
+            chunk_metadata[chunk_id] = hit
+
+    # Sort by RRF score and create final results
+    sorted_chunks = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+
+    final_hits = []
+    for final_rank, (chunk_id, rrf_score) in enumerate(sorted_chunks[:k], start=1):
+        original_hit = chunk_metadata[chunk_id]
+
+        # Create new SearchHit with RRF score
+        hybrid_hit = SearchHit(
+            rank=final_rank,
+            score=rrf_score,  # RRF combined score
+            chunk_id=chunk_id,
+            doc_id=original_hit.doc_id,
+            page=original_hit.page,
+            title=original_hit.title,
+            text=original_hit.text
+        )
+        final_hits.append(hybrid_hit)
+
+    return final_hits
 
 
 # -----------
@@ -324,6 +394,51 @@ def keyword_search(req: KeywordSearchRequest) -> KeywordSearchResponse:
     hits = [h for h in hits if h.score >= req.min_score][:req.k]
 
     return KeywordSearchResponse(query=req.query, k=req.k, hits=hits)
+
+
+@app.post("/hybrid_search", response_model=HybridSearchResponse)
+def hybrid_search(req: HybridSearchRequest) -> HybridSearchResponse:
+    """
+    Hybrid search combining semantic (FAISS) and keyword (FTS5) search using RRF.
+    - Performs both semantic and keyword search independently
+    - Combines results using Reciprocal Rank Fusion (RRF)
+    - Returns top-k results ranked by RRF score
+    """
+    state = cast(Any, getattr(app, "state"))
+
+    # Check if both search methods are available
+    if state.index is None or state.model is None:
+        raise HTTPException(status_code=503, detail="Semantic search not available.")
+
+    if not state.fts5_available:
+        raise HTTPException(status_code=503, detail="Keyword search not available.")
+
+    # 1. Perform semantic search (reuse existing logic)
+    qv = _embed_query(state.model, req.query)
+    scores, ids = state.index.search(qv, req.semantic_k)
+    semantic_hits = _format_hits(ids, scores, state.side, req.semantic_k, state.chunk_text)
+
+    # Apply semantic minimum score filter
+    semantic_hits = [h for h in semantic_hits if h.score >= req.min_score]
+
+    # 2. Perform keyword search (reuse existing logic)
+    fts_results = _keyword_search(req.query, req.keyword_k)
+    keyword_hits = _format_keyword_hits(fts_results, state.side, state.chunk_text, req.keyword_k)
+
+    # 3. Combine using Reciprocal Rank Fusion
+    hybrid_hits = _reciprocal_rank_fusion(
+        semantic_hits,
+        keyword_hits,
+        req.k,
+        req.rrf_constant
+    )
+
+    return HybridSearchResponse(
+        query=req.query,
+        k=req.k,
+        hits=hybrid_hits,
+        method="hybrid_rrf"
+    )
 
 
 # -------------------------

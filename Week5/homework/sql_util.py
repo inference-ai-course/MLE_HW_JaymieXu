@@ -63,30 +63,3 @@ def init_chunk_meta_db():
     
     conn.commit()
     conn.close()
-    
-    
-def search_fts5(query_text: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Search chunks using FTS5 keyword search"""
-    conn = sqlite3.connect(cfg.CHUNKS_OUT)
-
-    # Use FTS5 MATCH query for keyword search
-    cursor = conn.execute('''
-        SELECT chunk_id, doc_id, text,
-               rank AS fts_score
-        FROM chunks_fts
-        WHERE chunks_fts MATCH ?
-        ORDER BY rank
-        LIMIT ?
-    ''', (query_text, limit))
-
-    results = []
-    for row in cursor.fetchall():
-        results.append({
-            'chunk_id': row[0],
-            'doc_id': row[1],
-            'text': row[2],
-            'fts_score': row[3]
-        })
-
-    conn.close()
-    return results
