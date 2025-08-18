@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import List, Optional, Any, Dict, cast
 
 import json
+import sqlite3
 import faiss
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -81,21 +82,32 @@ async def lifespan(app: FastAPI):
             f"Run your build step (run_faiss) to generate it."
         )
 
-    side: List[Dict[str, Any]] = [
-        json.loads(line) for line in cfg.SIDE_CAR_PATH.read_text(encoding="utf-8").splitlines()
-    ]
-
-    # build an in-memory map for full chunk text (fast lookups per request)
+    side: List[Dict[str, Any]] = []
+    conn   = sqlite3.connect(cfg.SIDE_CAR_PATH)
+    cursor = conn.execute("SELECT chunk_id, doc_id, page, title FROM chunk_meta ORDER BY rowid")
+    
+    for row in cursor.fetchall():
+        side.append({
+            "chunk_id": row[0],
+            "doc_id":   row[1],
+            "page":     row[2],
+            "title":    row[3]
+        })
+        
+    conn.close()
+    
+    # CHANGE: Build chunk_text map from SQLite instead of JSONL
     chunk_text: Dict[str, str] = {}
-
-    with cfg.CHUNKS_OUT.open(encoding="utf-8") as f:
-        for line in f:
-            ch  = json.loads(line)
-            cid = ch.get("chunk_id")
-            txt = ch.get("text")
-
-            if cid and txt:
-                chunk_text[cid] = txt
+    chunks_conn   = sqlite3.connect(cfg.CHUNKS_OUT)
+    chunks_cursor = chunks_conn.execute("SELECT chunk_id, text FROM chunks WHERE text IS NOT NULL AND text != ''")
+    
+    for row in chunks_cursor.fetchall():
+        cid = row[0]
+        txt = row[1]
+        if cid and txt:
+            chunk_text[cid] = txt
+            
+    chunks_conn.close()
 
     # quick consistency check (warn only)
     if index.ntotal != len(side):
