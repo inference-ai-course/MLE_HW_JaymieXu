@@ -1,6 +1,8 @@
 # Week 5 Homework: Hybrid Retrieval System
 
-This project implements a hybrid search system combining semantic search (FAISS) with keyword search (SQLite FTS5), evaluated using Reciprocal Rank Fusion (RRF).
+This project implements a hybrid search system combining semantic search (FAISS) with keyword search (SQLite FTS5), evaluated using Reciprocal Rank Fusion (RRF) + BM25 ranking.
+
+<img width="1461" height="590" alt="image" src="https://github.com/user-attachments/assets/c9700e44-0e38-4157-89ee-241e08799291" />
 
 ## System Components
 
@@ -76,7 +78,7 @@ The evaluation notebook compares all three search methods using Hit Rate@3 on 12
 
 ✅ **SQLite + FAISS Hybrid Architecture**  
 ✅ **FTS5 Full-Text Search**  
-✅ **Reciprocal Rank Fusion (RRF)**  
+✅ **Reciprocal Rank Fusion (RRF) + BM25 ranking**  
 ✅ **FastAPI REST Endpoints**  
 ✅ **Comprehensive Evaluation Framework**  
 
