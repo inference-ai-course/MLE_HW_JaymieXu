@@ -1,6 +1,8 @@
 ﻿import json
 import os
 import sys
+import logging
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +17,21 @@ from transformers import pipeline, BitsAndBytesConfig
 from dotenv import load_dotenv
 
 from TTS.api import TTS
+
+# Setup simple logging to output.log
+script_dir = Path(__file__).resolve().parent
+log_file = script_dir / "output.log"
+
+# Simple file logger that flushes immediately
+def log_to_file(message):
+    with open(log_file, 'a') as f:
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        f.write(f"{timestamp} - {message}\n")
+        f.flush()
+
+# Clear log file at startup
+with open(log_file, 'w') as f:
+    f.write("")
 
 # Tools
 
@@ -58,13 +75,20 @@ def route_llm_output(llm_output: str) -> str:
 
     if func_name == "search_arxiv":
         query = args.get("query", "")
-        return search_arxiv(query)
+        log_to_file(f"FUNCTION CALL: search_arxiv(query='{query}')")
+        result = search_arxiv(query)
+        log_to_file(f"FUNCTION OUTPUT: {result}")
+        return f"Using tool: {result}"
     
     elif func_name == "calculate":
         expr = args.get("expression", "")
-        return calculate(expr)
+        log_to_file(f"FUNCTION CALL: calculate(expression='{expr}')")
+        result = calculate(expr)
+        log_to_file(f"FUNCTION OUTPUT: {result}")
+        return f"Using tool: {result}"
     
     else:
+        log_to_file(f"UNKNOWN FUNCTION: {func_name}")
         return f"Error: Unknown function '{func_name}'"
 
 
@@ -261,9 +285,11 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
 
     user_text = transcribe_audio(asr_model, audio_bytes)
     print(f"DEBUG: Transcribed text -> '{user_text}'")
+    log_to_file(f"USER QUERY: {user_text}")
 
     # If transcription is empty, don't bother with the LLM
     if not user_text.strip():
+        log_to_file("No speech detected in audio")
         return JSONResponse(
             status_code=400,
             content={"error": "No speech detected in audio."}
@@ -271,10 +297,13 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
 
     bot_text = generate_response(llm, user_text)
     print(f"DEBUG: LLM response -> '{bot_text}'")
+    log_to_file(f"RAW LLM RESPONSE: {bot_text}")
     
     # Route the LLM output through function calling logic
     final_response = route_llm_output(bot_text)
     print(f"DEBUG: Final response after routing -> '{final_response}'")
+    log_to_file(f"FINAL RESPONSE: {final_response}")
+    log_to_file("=" * 50)  # Separator between queries
 
     output_filename = "response.wav"
     output_audio_path = synthesize_speech(tts, final_response, filename=output_filename)
