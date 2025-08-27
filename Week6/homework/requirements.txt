@@ -1,0 +1,30 @@
+# Voice Agent with Function Calling - Requirements
+# Note: PyTorch is already installed on the server, do not reinstall
+
+# Core web framework
+fastapi
+uvicorn[standard]
+
+# Audio processing
+openai-whisper
+
+# NLP and transformers
+transformers
+accelerate
+bitsandbytes
+
+# TTS (Text-to-Speech) 
+coqui-tts
+
+# Hugging Face integration
+huggingface_hub
+
+# Mathematical computation
+sympy
+
+# Environment configuration
+python-dotenv
+
+# Constraints from server
+numpy<2
+pydantic<3
