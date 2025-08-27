@@ -1,4 +1,5 @@
-﻿import os
+﻿import json
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,6 +15,58 @@ from transformers import pipeline, BitsAndBytesConfig
 from dotenv import load_dotenv
 
 from TTS.api import TTS
+
+# Tools
+
+def search_arxiv(query: str) -> str:
+    """
+    Simulate an arXiv search or return a dummy passage for the given query.
+    In a real system, this might query the arXiv API and extract a summary.
+    """
+    
+    # Example placeholder implementation:
+    return f"[arXiv snippet related to '{query}']"
+
+
+def calculate(expression: str) -> str:
+    """
+    Evaluate a mathematical expression and return the result as a string.
+    """
+    
+    try:
+        from sympy import sympify
+        result = sympify(expression)
+        return str(result)
+    
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def route_llm_output(llm_output: str) -> str:
+    """
+    Route LLM response to the correct tool if it's a function call, else return the text.
+    Expects LLM output in JSON format like {'function': ..., 'arguments': {...}}.
+    """
+    try:
+        output = json.loads(llm_output)
+        func_name = output.get("function")
+        args = output.get("arguments", {})
+        
+    except (json.JSONDecodeError, TypeError):
+        # Not a JSON function call; return the text directly
+        return llm_output
+
+    if func_name == "search_arxiv":
+        query = args.get("query", "")
+        return search_arxiv(query)
+    
+    elif func_name == "calculate":
+        expr = args.get("expression", "")
+        return calculate(expr)
+    
+    else:
+        return f"Error: Unknown function '{func_name}'"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,7 +134,29 @@ app.add_middleware(
 
 SYSTEM_PROMPT = {
     "role": "system",
-    "content": "You are an helpful AI assistant. The user will provide you with text that has been transcribed from an audio file. Your job is to have a friendly but shy response to the content of the transcription."
+    "content": """You are a helpful AI assistant with access to tools. The user will provide you with text that has been transcribed from an audio file. Your job is to have a friendly but shy response to the content of the transcription.
+
+    You have access to the following tools:
+    1. calculate(expression) - for mathematical calculations
+    2. search_arxiv(query) - for searching arXiv papers
+
+    When the user asks for a mathematical calculation, respond with a JSON function call in this exact format:
+    {"function": "calculate", "arguments": {"expression": "the mathematical expression"}}
+
+    When the user asks to search arXiv papers or research, respond with a JSON function call in this exact format:
+    {"function": "search_arxiv", "arguments": {"query": "the search query"}}
+
+    For all other conversations, respond normally with friendly text (no JSON).
+
+    Examples:
+    User: "What is 2 plus 3?"
+    Assistant: {"function": "calculate", "arguments": {"expression": "2+3"}}
+
+    User: "Search for papers about quantum computing"
+    Assistant: {"function": "search_arxiv", "arguments": {"query": "quantum computing"}}
+
+    User: "How are you today?"
+    Assistant: Oh, hello! I'm doing well, thank you for asking. How are you?"""
 }
 
 conversation_history = []
@@ -196,14 +271,19 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
 
     bot_text = generate_response(llm, user_text)
     print(f"DEBUG: LLM response -> '{bot_text}'")
+    
+    # Route the LLM output through function calling logic
+    final_response = route_llm_output(bot_text)
+    print(f"DEBUG: Final response after routing -> '{final_response}'")
 
     output_filename = "response.wav"
-    output_audio_path = synthesize_speech(tts, bot_text, filename=output_filename)
+    output_audio_path = synthesize_speech(tts, final_response, filename=output_filename)
 
     if output_audio_path:
         return JSONResponse(content={
             "user_text": user_text,
-            "bot_text": bot_text,
+            "bot_text": final_response,  # Show the final response after function calling
+            "raw_llm_response": bot_text,  # Show the raw LLM output for debugging
             "audio_url": f"/audio/{output_filename}"  # Provide a URL to the audio
         })
     else:
