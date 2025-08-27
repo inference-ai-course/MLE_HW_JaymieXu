@@ -87,9 +87,13 @@ SYSTEM_PROMPT = {
 conversation_history = []
 
 def transcribe_audio(asr_model, audio_bytes):
-    with open("temp.wav", "wb") as f:
+    # Get the directory where this script lives
+    script_dir = Path(__file__).resolve().parent
+    temp_file = script_dir / "temp.wav"
+    
+    with open(temp_file, "wb") as f:
         f.write(audio_bytes)
-    result = asr_model.transcribe("temp.wav", language="en")
+    result = asr_model.transcribe(str(temp_file), language="en")
 
     return result["text"]
 
@@ -126,9 +130,13 @@ def generate_response(llm, user_text):
 
 def synthesize_speech(tts_engine, text, filename="response.wav"):
     try:
+        # Get the directory where this script lives
+        script_dir = Path(__file__).resolve().parent
+        file_path = script_dir / filename
+        
         tts_engine.tts_to_file(
             text=text,
-            file_path=filename,
+            file_path=str(file_path),
             speaker="Ana Florence",  # A good, standard female voice
             language="en"
         )
