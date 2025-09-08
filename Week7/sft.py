@@ -1,12 +1,13 @@
-from unsloth import FastLanguageModel, SFTTrainer
+from unsloth import FastLanguageModel
 from transformers import AutoTokenizer, TrainingArguments
 from datasets import load_dataset
+from trl import SFTTrainer
 import settings as cfg
 
 def fine_tune_qwen_model(
-    model_name: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    model_name: str = "unsloth/Qwen2.5-3B-Instruct",
     dataset_file: str = None,
-    output_dir: str = "Qwen3-4B-qlora-finetuned",
+    output_dir: str = "Qwen2.5-3B-qlora-finetuned",
     batch_size: int = 4,
     gradient_steps: int = 4,
     epochs: int = 2,
@@ -32,13 +33,25 @@ def fine_tune_qwen_model(
     
     print(f"Loading model: {model_name}")
     # Load the base Qwen model in 4-bit mode (dynamic quantization)
-    model = FastLanguageModel.from_pretrained(
+    model, tokenizer = FastLanguageModel.from_pretrained(
         model_name,
         max_seq_length=max_seq_length,
         dtype=None,  # Auto-detect
         load_in_4bit=True
     )
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+    
+    #QLORA Adaptor
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=16,
+        lora_alpha=16,
+        lora_dropout=0.0,
+        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"],
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=42,
+        use_rslora=False,
+    )
     
     # Set default dataset file if not provided
     if dataset_file is None:
@@ -63,7 +76,8 @@ def fine_tune_qwen_model(
             gradient_accumulation_steps=gradient_steps,
             num_train_epochs=epochs,
             learning_rate=learning_rate,
-            fp16=True,
+            fp16=False,
+            bf16=True,
             logging_steps=50,
             save_strategy="epoch",
             optim="adamw_8bit",  # Use 8-bit Adam optimizer
