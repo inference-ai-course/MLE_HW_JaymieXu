@@ -1,0 +1,42 @@
+[
+  {
+    "question": "What is HiFi, and what does it aim to achieve in complexresidual vector quantization?",
+    "answer": "We present a neural speech codec that challenges the need for complexresidual vector quantization (RVQ) stacks by introducing a simpler,single-stage quantization approach."
+  },
+  {
+    "question": "What is PARCO, and what does it aim to achieve in Chinese AISHELL-1 and WER of 11?",
+    "answer": "To address these issues, we proposePhoneme-Augmented Robust Contextual ASR via COntrastive entity disambiguation(PARCO), which integrates phoneme-aware encoding, contrastive entitydisambiguation, entity-level supervision, and hierarchical entity filtering.These components enhance phonetic discrimination, ensure complete entityretrieval, and reduce false positives under uncertainty."
+  },
+  {
+    "question": "What is CMRAG, and what does it aim to achieve in processing?",
+    "answer": "This text proposesco-modality-based RAG (CMRAG), which can simultaneously leverage text andimages for efficient retrieval and generation."
+  },
+  {
+    "question": "What motivates the use of AlphaGo for testing the progressof artificial intelligence algorithms?",
+    "answer": "Complex games have long been an important benchmark for testing the progressof artificial intelligence algorithms."
+  },
+  {
+    "question": "What concrete outcome or improvement is reported for a multilingual environment is a challengingtask?",
+    "answer": "Considering these challenges, we introduce Topic Model Translation (TMT), anovel, robust and transparent technique designed to transfer topic models(e.g., Latent Dirichlet Allocation (LDA) based topic models) from one languageto another, without the need for metadata, embeddings, or aligned corpora."
+  },
+  {
+    "question": "What concrete outcome or improvement is reported for credit monitoring?",
+    "answer": "Evaluated on a dataset comprising 1,428 small andmedium-sized enterprises (SMEs), ASC achieves a Silhouette score that is 18%higher than that of a single-type data baseline method."
+  },
+  {
+    "question": "What motivates the use of DeepFake for audiodeepfake detection?",
+    "answer": "However, a standardizedand comprehensive benchmark is still missing."
+  },
+  {
+    "question": "What motivates the use of meaning-making for modeling of human meaning-making constitutesa powerful class of instruments for?",
+    "answer": "The proliferation of methods for modeling of human meaning-making constitutesa powerful class of instruments for the analysis of complex semiotic systems.However, the field lacks a general theoretical framework for describing thesemodeling practices across various model types in an apples-to-apples way."
+  },
+  {
+    "question": "What is DrDiff, and what does it aim to achieve in long-text generation thatovercomes the efficiency-quality trade-off through thre?",
+    "answer": "This text introduces DrDiff, a novel framework for long-text generation thatovercomes the efficiency-quality trade-off through three core technologies.First, we design a dynamic expert scheduling mechanism that intelligentlyallocates computational resources during the diffusion process based on textcomplexity, enabling more efficient handling of text generation tasks ofvarying difficulty."
+  },
+  {
+    "question": "What train/validation/test split ratio was used?",
+    "answer": "The text does not include that detail."
+  }
+]
