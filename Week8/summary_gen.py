@@ -67,10 +67,12 @@ def process_paper_to_summaries(pdf_path, llm):
     
     # Prepare result
     result = {
-        "pdf_path": pdf_path,
-        "summary_1": summary1,
-        "summary_2": summary2,
-    }
+          "pdf_path": pdf_path,
+          "summary_1": summary1,
+          "summary_1_label": "",
+          "summary_2": summary2,
+          "summary_2_label": "",
+      }
     
     return result
 
