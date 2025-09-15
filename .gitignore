@@ -21,4 +21,7 @@ Week5/homework/data/
 Week7/data/
 Week7/Qwen2.5-3B-qlora-finetuned
 
+Week8/pdf/eval/*.pdf
+Week8/pdf/train/*.pdf
+
 *.wav
