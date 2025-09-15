@@ -1,14 +1,19 @@
 from trl import RewardTrainer
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments
 from datasets import load_dataset
+import os
 
 def main():
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_file = os.path.join(script_dir, "reward_data.jsonl")
+
     # Load tokenizer and model (following professor's code exactly)
     tokenizer = AutoTokenizer.from_pretrained("microsoft/deberta-v3-base")
     model = AutoModelForSequenceClassification.from_pretrained("microsoft/deberta-v3-base", num_labels=1)
 
-    # Load dataset from our reward_data.jsonl
-    dataset = load_dataset("json", data_files="reward_data.jsonl", split="train")
+    # Load dataset from our reward_data.jsonl (always from script directory)
+    dataset = load_dataset("json", data_files=data_file, split="train")
 
     # Preprocess function (following professor's code)
     def preprocess(example):
@@ -22,7 +27,6 @@ def main():
         output_dir="reward_model",
         per_device_train_batch_size=8,
         num_train_epochs=3,
-        evaluation_strategy="no",
         save_strategy="epoch",
         logging_steps=10,
         fp16=True
