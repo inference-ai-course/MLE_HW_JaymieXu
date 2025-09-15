@@ -7,7 +7,7 @@ import os
 
 SYSTEM_PROMPT = {
     "role": "system",
-    "content": "You are a scientific editor, write a 220-250 word, strictly faithful summary for grad-level ML readers stating the problem, core method (plain language), data/setting, key quantitative results, novelty vs prior work, and limitations; use only the provided text (no speculation)."
+    "content": "You are a scientific editor. Write a 220-250 word summary of this research paper for graduate-level ML readers. Include: the problem addressed, core method (in plain language), data/experimental setting, key quantitative results, novelty compared to prior work, and limitations. Be strictly faithful to the provided text - do not speculate."
 }
 
 
