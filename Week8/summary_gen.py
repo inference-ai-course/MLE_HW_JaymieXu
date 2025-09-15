@@ -7,11 +7,11 @@ import os
 
 SYSTEM_PROMPT = {
     "role": "system",
-    "content": "You are a scientific editor. Write a 220-250 word summary of this research paper for graduate-level ML readers. Include: the problem addressed, core method (in plain language), data/experimental setting, key quantitative results, novelty compared to prior work, and limitations. Be strictly faithful to the provided text - do not speculate."
+    "content": "You are a scientific editor. Write a 160-200 word summary of this research paper for graduate-level ML readers. Include: the problem addressed, core method (in plain language), data/experimental setting, key quantitative results, novelty compared to prior work, and limitations. Be strictly faithful to the provided text - do not speculate."
 }
 
 
-def generate_summary(llm, user_text, temperature=0.7, top_p=0.95, top_k=50, max_new_tokens=250):        
+def generate_summary(llm, user_text, temperature=0.7, top_p=0.95, top_k=50, max_new_tokens=150):        
       # Combine the system prompt with the recent conversation for the model.
       prompt_context = [SYSTEM_PROMPT] + user_text
 
@@ -28,13 +28,17 @@ def generate_summary(llm, user_text, temperature=0.7, top_p=0.95, top_k=50, max_
                    do_sample=True,
                    temperature=temperature,
                    top_k=top_k,
-                   top_p=top_p)
+                   top_p=top_p,
+                   return_full_text=False,
+                   eos_token_id=[
+                        llm.tokenizer.eos_token_id,
+                        llm.tokenizer.convert_tokens_to_ids("<|im_end|>")],
+                   pad_token_id=llm.tokenizer.eos_token_id
+      )
 
-      # Clean the output to get only the new assistant message.
-      raw_bot_response = outputs[0]["generated_text"]
-      bot_response = raw_bot_response.split("<|assistant|>")[-1].strip()
+      text = outputs[0]["generated_text"].strip()
 
-      return bot_response
+      return text
 
 
 def extract_text_from_pdf(pdf_path):
