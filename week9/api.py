@@ -12,9 +12,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from asr import Asr
-from llm import LLM
+from asr import Asr, ModelSize
+from llm import LLM, LLMProFile
 from tts import TTSEngine
+
+
+is_local = True
 
 
 def load_dotenv(
@@ -45,6 +48,16 @@ async def lifespan(app: FastAPI):
     # This code runs ONCE when the Uvicorn worker starts
     print("--- Lifespan started... ---")
     
+    # --- Profiles ---
+    if is_local:
+        print("--- Using local setup... ---")
+        asr_size    : ModelSize  = ModelSize.SMALL
+        llm_profile : LLMProFile = LLMProFile.SMALL
+    else:
+        print("--- Using server setup... ---")
+        asr_size    : ModelSize  = ModelSize.LARGE_V3
+        llm_profile : LLMProFile = LLMProFile.LARGE
+    
     script_dir = Path(__file__).resolve().parent
     dotenv_path = script_dir.parent / ".env"
     was_loaded = load_dotenv(dotenv_path=dotenv_path)
@@ -52,10 +65,10 @@ async def lifespan(app: FastAPI):
     print(f"Was .env file loaded? {was_loaded}")
     
     # --- Loading ASR ---
-    app.state.asr_model = Asr()
+    app.state.asr_model = Asr(asr_size)
     
     # --- Loading LLM ---
-    app.state.llm = LLM()
+    app.state.llm = LLM(llm_profile)
     
     # --- Loading TTS ---
     app.state.tts = TTSEngine()
@@ -148,5 +161,8 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
         )
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+    if is_local:
+        uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+    else:
+        uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
     
