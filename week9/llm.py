@@ -1,8 +1,15 @@
 import json
 from pathlib import Path
-from transformers import pipeline
+import torch
+from transformers import BitsAndBytesConfig, pipeline
 from summarize import Summarizer
 from search import Search
+from enum import Enum
+
+class LLMProFile(Enum):
+    SMALL = 0,
+    LARGE = 1
+    
 
 SYSTEM_PROMPT = {
     "role": "system",
@@ -32,16 +39,38 @@ SYSTEM_PROMPT = {
 }
 
 class LLM:
-    def __init__(self):
+    def __init__(self, profile : LLMProFile):
         self.conversation_history = []
         
-        self.llm = pipeline(
-            "text-generation",
-            model="Qwen/Qwen2.5-3B-Instruct",
-            model_kwargs={
-                "device_map": "auto"
-            }
-        )
+        if profile == LLMProFile.SMALL:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
+            
+            self.llm = pipeline(
+                "text-generation",
+                model="Qwen/Qwen2.5-3B-Instruct", #3B
+                model_kwargs={
+                    "quantization_config": quantization_config,
+                    "device_map": "auto"
+                }
+            )
+            
+        elif profile == LLMProFile.LARGE:
+            self.llm = pipeline(
+                "text-generation",
+                model="Qwen/Qwen2.5-7B-Instruct", #7B
+                model_kwargs={
+                    "device_map": "auto"
+                }
+            )
+            
+        else:
+            print("LLM fail to load.")
+            return
+            
         
         print("LLM loaded.")
         
