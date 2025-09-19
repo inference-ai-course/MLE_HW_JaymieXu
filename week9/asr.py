@@ -19,7 +19,7 @@ class Asr:
             device="cuda"
         )
         
-        print("ASR model with size {in_model_size.value} loaded With {in_compute_type.value}")
+        print("ASR model with size {in_model_size.value} loaded.")
 
 
     def __del__(self):
