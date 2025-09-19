@@ -66,11 +66,11 @@ class LLM:
         eos_ids = [tok.eos_token_id] + ([im_end] if im_end is not None else [])
         
         out = self.llm(prompt,
-                       max_new_tokens=100,
-                       do_sample=True,
-                       temperature=0.7,
-                       top_k=50,
-                       top_p=0.95,
+                       max_new_tokens=160,
+                       do_sample=False,
+                       temperature=0.6,
+                       top_p=0.9,
+                       repetition_penalty=1.05,
                        return_full_text=False,
                        eos_token_id=eos_ids)
         
