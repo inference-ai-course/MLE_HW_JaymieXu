@@ -14,4 +14,4 @@ class Summarizer:
         
         
     def summarize(self, text, in_max_length, in_min_length = 30, in_do_sample = False):
-        return self.summarizer(text, max_length=130, min_length=in_min_length, do_sample=in_do_sample)
+        return self.summarizer(text, max_length=in_max_length, min_length=in_min_length, do_sample=in_do_sample)
