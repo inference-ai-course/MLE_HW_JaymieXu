@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 import torch
 from transformers import BitsAndBytesConfig, pipeline
+from enum import Enum
+
 from summarize import Summarizer
 from search import Search
-from enum import Enum
+from notion import Notion
 
 class LLMProFile(Enum):
     SMALL = 0,
@@ -23,7 +25,7 @@ SYSTEM_PROMPT = {
     {"function": "search_arxiv", "arguments": {"query": "the search query"}}
 
     When the user asks to create a Notion note, respond with a JSON function call in this exact format:
-    {"function": "notion", "arguments": {}}
+    {"function": "notion"}
 
     For all other conversations, respond normally with friendly text (no JSON).
 
@@ -32,14 +34,14 @@ SYSTEM_PROMPT = {
     Assistant: {"function": "search_arxiv", "arguments": {"query": "quantum computing"}}
 
     User: "Save this to Notion"
-    Assistant: {"function": "notion", "arguments": {}}
+    Assistant: {"function": "notion"}
 
     User: "How are you today?"
     Assistant: Oh, hello! I'm doing well, thank you for asking. How are you?"""
 }
 
 class LLM:
-    def __init__(self, profile : LLMProFile):
+    def __init__(self, profile : LLMProFile, notion_token, notion_page_id):
         self.conversation_history = []
         
         if profile == LLMProFile.SMALL:
@@ -76,6 +78,9 @@ class LLM:
         
         self.rag_search = Search()
         self.summarizer = Summarizer()
+        self.notion     = Notion(notion_token, notion_page_id)
+        
+        self.is_notion_connected = self.notion.is_connected()
         
         
     def route_llm_output(self, llm_output: str) -> str:
@@ -112,8 +117,17 @@ class LLM:
         
         elif func_name == "notion":
             print(f"FUNCTION CALL: notion()")
-            # TODO: Add notion functionality
-            result = llm_output
+            
+            # Early out if not connected
+            if not self.is_notion_connected:
+                result = "You are not connected to notion. I cannot write to it."
+                print(f"FUNCTION OUTPUT: {result}")
+                return f"Using tool: {result}"
+                
+            
+            self.notion.write_blocks(self.notion.conversation_to_notion_blocks(self.conversation_history[-10:]))
+            
+            result = "I have written the conversation to notion."
             print(f"FUNCTION OUTPUT: {result}")
             return f"Using tool: {result}"
         

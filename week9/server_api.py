@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     
     # -- Env --
     script_dir = Path(__file__).resolve().parent
-    dotenv_path = script_dir.parent / ".env"
+    dotenv_path = script_dir / ".env"
     was_loaded = load_dotenv(dotenv_path=dotenv_path)
     
     print(f"Was .env file loaded? {was_loaded}")
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     app.state.asr_model = Asr(asr_size)
     
     # --- Loading LLM ---
-    app.state.llm = LLM(llm_profile)
+    app.state.llm = LLM(llm_profile, os.getenv('MY_NOTION_TOKEN'), os.getenv('MY_NOTION_PAGE_ID'))
     
     # --- Loading TTS ---
     app.state.tts = TTSEngine()
