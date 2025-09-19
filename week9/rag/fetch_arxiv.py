@@ -555,7 +555,7 @@ def run_chunk(limit_docs: int | None = None):
         docs_conn.close()
 
 
-def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL"):
+def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CR"):
     results = arxiv_search(query, total=total, per_request=per_request)
 
     seen_ids = set()
@@ -590,7 +590,7 @@ def run_fetch_arxiv(total: int, per_request: int = 50, query: str = "cat:cs.CL")
 
 
 def main() -> None:
-    run_fetch_arxiv(50)
+    run_fetch_arxiv(250)
     run_extract(limit=None)
     run_chunk(limit_docs=None)
     run_faiss()
