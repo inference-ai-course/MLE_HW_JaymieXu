@@ -4,6 +4,7 @@ from TTS.api import TTS
 class TTSEngine:
     def __init__(self):
         self.tts_engine = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
+        print("TTS Loaded")
         
         
     def synthesize_speech(self, text, filename="response.wav"):
