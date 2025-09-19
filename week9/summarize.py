@@ -6,7 +6,7 @@ class Summarizer:
     def __init__(self):
         self.summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
         
-        print("ASR model with size {in_model_size.value} loaded With {in_compute_type.value}")
+        print("Summerization engine loadded")
 
 
     def __del__(self):

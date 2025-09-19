@@ -97,13 +97,15 @@ class LLM:
             print(f"FUNCTION CALL: search_arxiv(query='{query}')")
             
             # Get top 3 rag paper and combine
-            rag_results = self.rag_search.search(query, 3)
+            rag_results = self.rag_search.hybrid_search(query, 3)
             combined_text = ""
-            for search_hit in rag_results:
-                combined_text += search_hit.text + "\n"
+            for search_hit in rag_results["hits"]:
+                combined_text += search_hit.text + "\n\n"
+                
+            print(f"COMBINED TEXT: {combined_text}")
             
             # Sum
-            result = self.summarizer.summarize(combined_text, 30)
+            result = self.summarizer.summarize(combined_text, 120)[0]["summary_text"]
             
             print(f"FUNCTION OUTPUT: {result}")
             return f"Using tool: {result}"

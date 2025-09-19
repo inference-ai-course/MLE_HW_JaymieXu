@@ -12,13 +12,15 @@ import torch
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+script_dir = Path(__file__).resolve().parent
+
 EMBED_MODEL      = "sentence-transformers/all-MiniLM-L6-v2"
 MIN_SCORE        = 0.25 # Bullsh*t cut off score
 MIN_FTS_SCORE    = 0.1  # Minimum FTS5 relevance score
-MANIFEST_PATH    = Path("rag/data/index/manifest.json")
-FAISS_INDEX_PATH = Path("rag/data/index/faiss.index")
-SIDE_CAR_PATH    = Path("rag/data/index/chunk_meta.db")
-CHUNKS_OUT       = Path("rag/data/processed/chunks.db")
+MANIFEST_PATH    = Path(script_dir / "rag/data/index/manifest.json")
+FAISS_INDEX_PATH = Path(script_dir / "rag/data/index/faiss.index")
+SIDE_CAR_PATH    = Path(script_dir / "rag/data/index/chunk_meta.db")
+CHUNKS_OUT       = Path(script_dir / "rag/data/processed/chunks.db")
 
 # ---------------------------
 # Data classes (replacing Pydantic models)

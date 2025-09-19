@@ -1,10 +1,8 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import IO
-from dotenv.main import DotEnv, StrPath
-from dotenv import find_dotenv
+from dotenv import load_dotenv
 from fastapi import FastAPI
-from transformers import Optional
 import os
 
 from fastapi import FastAPI, UploadFile, File, Request
@@ -14,33 +12,10 @@ import uvicorn
 
 from asr import Asr, ModelSize
 from llm import LLM, LLMProFile
-from tts import TTSEngine
+from tts_engine import TTSEngine
 
 
 is_local = True
-
-
-def load_dotenv(
-    dotenv_path: Optional[StrPath] = None,
-    stream: Optional[IO[str]] = None,
-    verbose: bool = False,
-    override: bool = False,
-    interpolate: bool = True,
-    encoding: Optional[str] = "utf-8",
-) -> bool:
-    if dotenv_path is None and stream is None:
-        dotenv_path = find_dotenv()
-
-    dotenv = DotEnv(
-        dotenv_path=dotenv_path,
-        stream=stream,
-        verbose=verbose,
-        interpolate=interpolate,
-        override=override,
-        encoding=encoding,
-    )
-    
-    return dotenv.set_as_environment_variables()
 
 
 @asynccontextmanager
@@ -58,6 +33,7 @@ async def lifespan(app: FastAPI):
         asr_size    : ModelSize  = ModelSize.LARGE_V3
         llm_profile : LLMProFile = LLMProFile.LARGE
     
+    # -- Env --
     script_dir = Path(__file__).resolve().parent
     dotenv_path = script_dir.parent / ".env"
     was_loaded = load_dotenv(dotenv_path=dotenv_path)
@@ -162,7 +138,7 @@ async def chat_endpoint(request: Request, file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     if is_local:
-        uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+        uvicorn.run("server_api:app", host="127.0.0.1", port=8000, reload=True)
     else:
-        uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("server_api:app", host="0.0.0.0", port=8000, reload=True)
     

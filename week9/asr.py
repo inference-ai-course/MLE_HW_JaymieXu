@@ -19,20 +19,20 @@ class Asr:
             device="cuda"
         )
         
-        print("ASR model with size {in_model_size.value} loaded.")
+        print(f"ASR model with size {in_model_size.value} loaded.")
 
 
     def __del__(self):
         del self.asr_model
         
         
-    def transcribe_audio(asr_model, audio_bytes, lang = "en"):
+    def transcribe_audio(self, audio_bytes, lang = "en"):
         # Get the directory where this script lives
         script_dir = Path(__file__).resolve().parent
         temp_file = script_dir / "temp.wav"
         
         with open(temp_file, "wb") as f:
             f.write(audio_bytes)
-        result = asr_model.transcribe(str(temp_file), language=lang)
+        result = self.asr_model.transcribe(str(temp_file), language=lang)
     
         return result["text"]
