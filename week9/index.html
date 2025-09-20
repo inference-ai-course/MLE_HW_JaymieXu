@@ -1,51 +1,297 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Assistant Demo</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; color: #1c1e21; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background-color: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); width: 100%; max-width: 600px; text-align: center; }
-        h1 { color: #0c0d0e; }
-        #recordButton { background-color: #1877f2; color: white; border: none; padding: 1rem 2rem; border-radius: 20px; font-size: 1.2rem; cursor: pointer; transition: background-color 0.3s, transform 0.2s; }
-        #recordButton.recording { background-color: #fa383e; transform: scale(1.05); }
-        #recordButton:disabled { background-color: #9dbef2; cursor: not-allowed; }
-        #status { margin-top: 1.5rem; font-size: 1.1rem; color: #606770; min-height: 25px; }
-        .conversation { margin-top: 2rem; text-align: left; max-height: 40vh; overflow-y: auto; border: 1px solid #dddfe2; padding: 1rem; border-radius: 8px;}
-        .message {
-            margin-bottom: 1rem;
-            padding: 0.8rem;
-            border-radius: 18px;
-            max-width: 80%;
-            /* Replaced 'line-break: anywhere' with the more standard 'overflow-wrap' */
-            overflow-wrap: break-word;
-            word-wrap: break-word; /* Older browser support */
-        }
-        .user { background-color: #e7f3ff; color: #1877f2; margin-left: auto; border-bottom-right-radius: 4px; }
-        .assistant { background-color: #f0f2f5; color: #333; margin-right: auto; border-bottom-left-radius: 4px; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cyber Security Voice Assistant</title>
+  <style>
+    :root{
+      --bg: #0b0b12;
+      --card: #12121b;
+      --muted: #a5a6b0;
+      --text: #e9e9f1;
+      --accent: #915cff;     /* main purple */
+      --accent-2:#ff7bd3;    /* pinky secondary */
+      --glow: 0 0 24px rgba(145,92,255,.45), 0 0 56px rgba(255,123,211,.25);
+      --radius: 16px;
+    }
 
-        footer { margin-top: 2rem; font-size: 0.8rem; color: #8a8d91; }
-        footer a { color: #8a8d91; text-decoration: underline; }
-    </style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background:
+        radial-gradient(1200px 800px at 80% -10%, rgba(145,92,255,.15), transparent 60%),
+        radial-gradient(1000px 700px at -10% 100%, rgba(255,123,211,.10), transparent 60%),
+        linear-gradient(180deg, #0a0a10 0%, #0b0b12 100%);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .container {
+      width: min(960px, 100%);
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: calc(var(--radius) + 8px);
+      box-shadow: 0 20px 50px rgba(0,0,0,.45);
+      padding: clamp(16px, 3vw, 28px);
+      position: relative;
+      overflow: clip;
+    }
+
+    /* subtle floating kawaii sparkles */
+    .sparkle {
+      position: absolute;
+      width: 10px; height: 10px;
+      background: radial-gradient(circle at 30% 30%, #fff 0%, #fff0 60%);
+      filter: blur(.2px);
+      opacity: .75;
+      animation: float 8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .sparkle.s1 { top: 10%; left: 7%; animation-delay: 0s; }
+    .sparkle.s2 { top: 82%; left: 92%; animation-delay: 1.2s; }
+    .sparkle.s3 { top: 52%; left: 4%; animation-delay: 2.6s; }
+    .sparkle.s4 { top: 6%; left: 88%; animation-delay: 3.8s; }
+    .sparkle.s5 { top: 94%; left: 18%; animation-delay: 5.1s; }
+    @keyframes float {
+      0%   { transform: translateY(0) scale(1); opacity: .75; }
+      50%  { transform: translateY(-10px) scale(1.15); opacity: .95; }
+      100% { transform: translateY(0) scale(1); opacity: .75; }
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .badge {
+      display: inline-grid;
+      place-items: center;
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background:
+        radial-gradient(circle at 30% 30%, rgba(255,255,255,.16), transparent 55%),
+        linear-gradient(135deg, rgba(145,92,255,.35), rgba(255,123,211,.30));
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: var(--glow);
+      font-size: 28px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(20px, 4vw, 28px);
+      letter-spacing: .4px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: var(--radius);
+      padding: clamp(14px, 2.2vw, 18px);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
+    }
+
+    /* record section */
+    .record-wrap {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+      align-items: center;
+      justify-items: center;
+      text-align: center;
+    }
+
+    #recordButton {
+      --btn-pad: 0.95rem 1.4rem;
+      background: linear-gradient(180deg, #a47aff, #8f5aff);
+      color: white;
+      border: none;
+      padding: var(--btn-pad);
+      border-radius: 999px;
+      font-size: 1.05rem;
+      cursor: pointer;
+      transition: transform .14s ease, box-shadow .2s ease, filter .2s ease, background .2s ease;
+      box-shadow: 0 8px 24px rgba(145,92,255,.45);
+      letter-spacing: .2px;
+    }
+    #recordButton:hover:not(:disabled){ transform: translateY(-1px); filter: brightness(1.03); }
+    #recordButton:active{ transform: translateY(0); }
+    #recordButton:disabled{ background: #6f62a5; opacity: .55; cursor: not-allowed; }
+
+    #recordButton.recording {
+      background: linear-gradient(180deg, #ff7b7b, #ff4f6b);
+      box-shadow: 0 10px 26px rgba(255,100,140,.55), 0 0 0 6px rgba(255,100,140,.15);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { filter: brightness(1); }
+      50%     { filter: brightness(1.1); }
+    }
+
+    #status {
+      margin-top: 6px;
+      font-size: 0.95rem;
+      color: var(--muted);
+      min-height: 22px;
+    }
+
+    /* kawaii divider */
+    .divider {
+      margin: 18px auto 8px;
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(145,92,255,.6), rgba(255,123,211,.5), transparent);
+      opacity: .7;
+    }
+
+    /* conversation area */
+    .conversation {
+      margin-top: 14px;
+      height: min(42vh, 460px);
+      overflow-y: auto;
+      background: linear-gradient(180deg, rgba(255,255,255,.01), rgba(255,255,255,0));
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: var(--radius);
+      padding: 14px;
+      scroll-behavior: smooth;
+    }
+
+    .message {
+      position: relative;
+      margin: 0 0 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      max-width: 85%;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+      line-height: 1.4;
+      font-size: 0.98rem;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .message::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      border-radius: inherit;
+      pointer-events:none;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.02), 0 12px 30px rgba(0,0,0,.30);
+    }
+
+    .user {
+      margin-left: auto;
+      background:
+        linear-gradient(180deg, rgba(145,92,255,.18), rgba(145,92,255,.10));
+      color: #dcd7ff;
+      border-bottom-right-radius: 6px;
+      box-shadow: 0 8px 22px rgba(145,92,255,.18);
+      border: 1px solid rgba(145,92,255,.35);
+    }
+
+    .assistant {
+      margin-right: auto;
+      background:
+        linear-gradient(180deg, rgba(255,123,211,.16), rgba(255,123,211,.08));
+      color: #ffe9f8;
+      border-bottom-left-radius: 6px;
+      box-shadow: 0 8px 20px rgba(255,123,211,.18);
+      border: 1px solid rgba(255,123,211,.35);
+    }
+
+    /* tiny kawaii label chips */
+    .chip {
+      display:inline-flex; align-items:center; gap:6px;
+      font-size:.8rem; color:#d7ccff;
+      background: rgba(145,92,255,.18);
+      border: 1px solid rgba(145,92,255,.35);
+      padding: 6px 10px;
+      border-radius: 999px;
+      box-shadow: 0 8px 22px rgba(145,92,255,.25);
+    }
+    .chip .dot {
+      width:8px; height:8px; border-radius:50%;
+      background: radial-gradient(circle at 30% 30%, #fff, #915cff);
+      box-shadow: 0 0 8px rgba(145,92,255,.65);
+    }
+
+    footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: .85rem;
+      text-align: center;
+    }
+    footer a { color: #cdb8ff; text-decoration: underline; }
+
+    /* nicer scrollbar */
+    .conversation::-webkit-scrollbar { width: 10px; }
+    .conversation::-webkit-scrollbar-track { background: transparent; }
+    .conversation::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, #6f54c2, #915cff);
+      border-radius: 999px;
+    }
+
+    @media (max-width: 520px){
+      .message{ max-width: 100%; }
+      .badge{ width: 48px; height: 48px; font-size: 24px; }
+    }
+  </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Voice Assistant Demo</h1>
-    <p>Hold the button and speak to the assistant.</p>
-    <button id="recordButton">Hold to Record</button>
-    <div id="status">Initializing...</div>
-    <div class="conversation" id="conversation">
-        <!-- Conversation will appear here -->
+  <div class="container">
+    <!-- kawaii sparkles -->
+    <i class="sparkle s1"></i>
+    <i class="sparkle s2"></i>
+    <i class="sparkle s3"></i>
+    <i class="sparkle s4"></i>
+    <i class="sparkle s5"></i>
+
+    <header>
+      <div class="badge" aria-hidden="true">🛡️</div>
+      <div>
+        <h1>Cyber Security Voice Assistant</h1>
+        <p class="subtitle">Ask me anything Cyber Security ✨</p>
+      </div>
+    </header>
+
+    <div class="panel">
+      <div class="record-wrap">
+        <div class="chip" aria-hidden="true"><span class="dot"></span> Ready to listen</div>
+        <button id="recordButton" aria-pressed="false">Hold to Record</button>
+        <div id="status" role="status" aria-live="polite">Initializing...</div>
+      </div>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <div class="conversation" id="conversation" aria-label="Conversation transcript">
+        <!-- Messages appended here -->
+      </div>
+
+      <footer>
+        <p>Powered by Qwen2.5, Whisper, Facebook Bart Cnn and Coqui TTS · Non-commercial demo</p>
+        <p>AI agent may make mistakes - Education only</p>
+      </footer>
     </div>
+  </div>
 
-    <footer>
-    <p>Powered by Phi-3, Whisper, and Coqui TTS models. This is a non-commercial project.</p>
-</footer>
-</div>
-
-<script>
+  <!-- ⚠️ Script kept exactly as provided -->
+  <script>
     const recordButton = document.getElementById('recordButton');
     const statusDiv = document.getElementById('status');
     const conversationDiv = document.getElementById('conversation');
@@ -160,8 +406,6 @@
     recordButton.addEventListener('mouseup', stopRecording);
     recordButton.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
     recordButton.addEventListener('touchend', stopRecording);
-
-</script>
-
+  </script>
 </body>
 </html>
