@@ -25,5 +25,7 @@ Week8/pdf/eval/*.pdf
 Week8/pdf/train/*.pdf
 Week8/reward_model
 
+week9/rag/data
+
 *.wav
 *.pdf
