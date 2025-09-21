@@ -196,7 +196,7 @@ class Search:
         return hits
 
     def hybrid_search(self, query: str, k: int = 5, min_score: float = MIN_SCORE,
-                     semantic_k: int = 10, keyword_k: int = 10, rrf_constant: int = 60) -> dict:
+                     semantic_k: int = 20, keyword_k: int = 20, rrf_constant: int = 60) -> dict:
         """
         Hybrid search combining semantic (FAISS) and keyword (FTS5) search using RRF,
         then re-ranked with BM25.
@@ -223,6 +223,9 @@ class Search:
         # 2. Perform keyword search (reuse existing logic)
         fts_results = _keyword_search(query, keyword_k)
         keyword_hits = _format_keyword_hits(fts_results, self.side, self.chunk_text, keyword_k)
+
+        # Apply keyword minimum score filter (use FTS minimum score)
+        keyword_hits = [h for h in keyword_hits if h.score >= MIN_FTS_SCORE]
 
         # 3. Combine using Reciprocal Rank Fusion
         hybrid_hits = _reciprocal_rank_fusion(
@@ -259,8 +262,11 @@ class Search:
 # Helper functions
 # ----------------
 def _embed_query(model: SentenceTransformer, text: str) -> np.ndarray:
+    # Use BGE-specific prefix for better query understanding
+    prefixed_query = f"query: {text}"
+
     vec = model.encode(
-        [text],
+        [prefixed_query],
         convert_to_numpy=True,
         normalize_embeddings=True,   # cosine via IP
         show_progress_bar=False,

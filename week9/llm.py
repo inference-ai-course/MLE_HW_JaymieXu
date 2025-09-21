@@ -102,18 +102,19 @@ class LLM:
             print(f"FUNCTION CALL: search_arxiv(query='{query}')")
             
             # Get top x rag paper and combine
-            rag_results = self.rag_search.hybrid_search(query, 1)
+            rag_results = self.rag_search.hybrid_search(query, 3)
             combined_text = ""
             for search_hit in rag_results["hits"]:
-                combined_text += search_hit.text + "\n\n"
+                combined_text += self.summarizer.summarize(search_hit.text, 120)[0]["summary_text"]
                 
             print(f"COMBINED TEXT: {combined_text}")
             
             # Sum
             result = self.summarizer.summarize(combined_text, 120)[0]["summary_text"]
-            
+
             print(f"FUNCTION OUTPUT: {result}")
-            return f"Using tool: {result}"
+            print("Using tool: search_arxiv")
+            return result
         
         elif func_name == "notion":
             print(f"FUNCTION CALL: notion()")
@@ -122,14 +123,16 @@ class LLM:
             if not self.is_notion_connected:
                 result = "You are not connected to notion. I cannot write to it."
                 print(f"FUNCTION OUTPUT: {result}")
-                return f"Using tool: {result}"
+                print("Using tool: notion (failed - not connected)")
+                return result
                 
             
             self.notion.write_blocks(self.notion.conversation_to_notion_blocks(self.conversation_history[-10:]))
-            
+
             result = "I have written the conversation to notion."
             print(f"FUNCTION OUTPUT: {result}")
-            return f"Using tool: {result}"
+            print("Using tool: notion")
+            return result
         
         else:
             print(f"UNKNOWN FUNCTION: {func_name}")
