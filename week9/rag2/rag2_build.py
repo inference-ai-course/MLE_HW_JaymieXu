@@ -14,6 +14,14 @@ from transformers import AutoTokenizer
 from rag2_config import cfg, get_rag2_config_path
 import rag2_sql_util as rag2_sql_util
 
+# Global path variables
+PARSED_FILE   = get_rag2_config_path("proc") / "parsed.json"
+CHUNKS_FILE   = get_rag2_config_path("proc") / cfg.files.chunks_file
+INDEX_DIR     = get_rag2_config_path("indexed")
+FAISS_PATH    = INDEX_DIR / cfg.files.faiss_index
+SIDECAR_PATH  = INDEX_DIR / cfg.files.side_car
+MANIFEST_PATH = INDEX_DIR / cfg.files.manifest
+
 
 def load_tokenizer() -> Any:
     """Load tokenizer with configuration validation"""
@@ -101,12 +109,10 @@ def chunk_text_segment(tok, text: str, doc_id: str, segment_idx: int,
 
 def load_parsed_data() -> Dict[str, List[str]]:
     """Load the parsed.json data"""
-    parsed_file = get_rag2_config_path("proc") / "parsed.json"
+    if not PARSED_FILE.exists():
+        raise RuntimeError(f"Parsed data not found at {PARSED_FILE}")
 
-    if not parsed_file.exists():
-        raise RuntimeError(f"Parsed data not found at {parsed_file}")
-
-    with open(parsed_file, 'r', encoding='utf-8') as f:
+    with open(PARSED_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
@@ -119,8 +125,7 @@ def _load_embedder() -> SentenceTransformer:
 
 def _iter_chunks() -> Iterator[tuple[str, dict[str, Any]]]:
     """Iterate over chunks from database"""
-    chunks_file = get_rag2_config_path("proc") / cfg.files.chunks_file
-    conn = sqlite3.connect(chunks_file)
+    conn = sqlite3.connect(CHUNKS_FILE)
     cursor = conn.execute("SELECT text, chunk_id, doc_id, page FROM chunks WHERE text IS NOT NULL AND text != ''")
 
     for row in cursor.fetchall():
@@ -149,8 +154,7 @@ def run_chunk():
     rag2_sql_util.init_chunks_db()
 
     # Connect to chunks database
-    chunks_file = get_rag2_config_path("proc") / cfg.files.chunks_file
-    chunks_conn = sqlite3.connect(chunks_file)
+    chunks_conn = sqlite3.connect(CHUNKS_FILE)
 
     try:
         total_chunks = 0
@@ -194,21 +198,15 @@ def run_faiss():
     """Build FAISS index from chunks"""
     print("[INFO] Starting FAISS index building...")
 
-    chunks_file = get_rag2_config_path("proc") / cfg.files.chunks_file
-    if not chunks_file.exists():
-        print(f"[ERROR] Chunks file not found: {chunks_file}")
+    if not CHUNKS_FILE.exists():
+        print(f"[ERROR] Chunks file not found: {CHUNKS_FILE}")
         return
 
     # Initialize paths
-    index_dir = get_rag2_config_path("indexed")
-    index_dir.mkdir(parents=True, exist_ok=True)
-
-    faiss_path = index_dir / cfg.files.faiss_index
-    sidecar_path = index_dir / cfg.files.side_car
-    manifest_path = index_dir / cfg.files.manifest
+    INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
     # Clean rebuild
-    for p in (faiss_path, sidecar_path, manifest_path):
+    for p in (FAISS_PATH, SIDECAR_PATH, MANIFEST_PATH):
         if p.exists():
             p.unlink()
 
@@ -222,7 +220,7 @@ def run_faiss():
     total = 0
     dim = None
 
-    sidecar_conn = sqlite3.connect(sidecar_path)
+    sidecar_conn = sqlite3.connect(SIDECAR_PATH)
 
     def flush(flush_buf_txt: list[str], flush_buf_meta: list[dict]):
         nonlocal index, dim, total
@@ -281,7 +279,7 @@ def run_faiss():
         return
 
     # Save index
-    faiss.write_index(index, str(faiss_path))
+    faiss.write_index(index, str(FAISS_PATH))
 
     # Save manifest
     manifest_data = {
@@ -290,16 +288,16 @@ def run_faiss():
         "metric": "cosine",
         "count": total,
         "dim": dim,
-        "chunks_source": str(chunks_file),
-        "sidecar": str(sidecar_path),
+        "chunks_source": str(CHUNKS_FILE),
+        "sidecar": str(SIDECAR_PATH),
     }
 
-    with open(manifest_path, 'w', encoding='utf-8') as f:
+    with open(MANIFEST_PATH, 'w', encoding='utf-8') as f:
         json.dump(manifest_data, f, indent=2)
 
     print(f"[OK] FAISS built: {total} vectors, dim={dim}")
-    print(f"      index   → {faiss_path}")
-    print(f"      sidecar → {sidecar_path}")
+    print(f"      index   → {FAISS_PATH}")
+    print(f"      sidecar → {SIDECAR_PATH}")
 
 
 def main():
