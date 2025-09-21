@@ -1,0 +1,23 @@
+[paths]
+data    = "data"
+raw     = "data/raw_pdfs"
+meta    = "data/metadata"
+proc    = "data/processed"
+indexed = "data/index"
+
+[files]
+chunks_file = "chunks.json"
+chunks_done = "chunks.done"
+
+[model]
+embed_model  = "sentence-transformers/all-MiniLM-L6-v2"
+chunk_size   = 256
+overlap_frac = 0.20  # 20%
+min_char     = 40
+batch        = 8     # adjust to your VRAM/CPU
+normalize    = true  # cosine via IP when True
+
+[search]
+fts5_tokenizer = "porter"  # Options: simple, porter, unicode61
+min_score      = 0.25      # Bullsh*t cut off score
+min_score_fts  = 0.1       # Minimum FTS5 relevance score
