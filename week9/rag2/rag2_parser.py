@@ -8,6 +8,7 @@ from typing import List, Tuple
 import fitz  # PyMuPDF
 
 from rag2_config import cfg, get_rag2_config_path
+from rag2_anonymizer import anonymize_text
 
 # ---------- helpers: normalization / heuristics ----------
 
@@ -15,6 +16,14 @@ _whitespace_re = re.compile(r"[ \t\f\v]+")
 _bullet_or_list = re.compile(r"^\s*(?:[-*•·]|(?:\d+|[A-Za-z])[\.\)])\s+")
 _heading_like = re.compile(r"^[A-Z0-9][A-Z0-9 \-:]{4,}$")  # crude ALLCAPS-ish
 _soft_hyphen = "\u00ad"
+
+def contains_figure_ref(text: str) -> bool:
+    """
+    Return True if the text contains 'fig.', 'fig', or 'figure' or 'figure.'
+    (case-insensitive, by lowering input first).
+    """
+    text = text.lower()
+    return "fig." in text or "fig " in text or "figure" in text or "figure." in text
 
 def normalize_text(s: str) -> str:
     # collapse excessive spaces, but keep newlines (paragraphs)
@@ -225,32 +234,50 @@ def extract_pages(pdf_path: Path) -> List[str]:
             if txt:
                 txt = _strip_headers_footers(txt, headers, footers)
                 txt = normalize_text(txt)
-
-            pages.append(txt)
+            
+            processed_text = anonymize_text(txt)
+            # skip any text that has figure its not useable
+            if not contains_figure_ref(processed_text):
+                pages.append(processed_text)
 
     return pages
 
 
-def extract_pdfs(directory_path: Path):
+def extract_pdfs(directory_path: Path, max_pdfs: int | None = None):
     """
     Process all files in cfg.paths.raw with extract_pages
     and save into a single parsed.json inside cfg.paths.proc.
-    Structure:
-    {
-        "filename1": [page_texts...],
-        "filename2": [page_texts...]
-    }
+
+    Parameters
+    ----------
+    directory_path : Path
+        Path to the folder containing PDFs.
+    max_pdfs : int | None
+        If set, stop after processing this many PDFs (for testing).
+        If None, process all PDFs.
+
+    Output
+    ------
+    parsed.json : dict
+        {
+            "filename1": [page_texts...],
+            "filename2": [page_texts...]
+        }
     """
     proc_dir = get_rag2_config_path("proc")
     proc_dir.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, list[str]] = {}
 
-    for pdf_path in directory_path.iterdir():
+    for idx, pdf_path in enumerate(directory_path.iterdir(), start=1):
         print(f"[INFO] Processing {pdf_path.name} ...")
         pages = extract_pages(pdf_path)
         results[pdf_path.stem] = pages
         print(f"[OK] Parsed {len(pages)} pages from {pdf_path.name}")
+
+        if max_pdfs is not None and idx >= max_pdfs:
+            print(f"[INFO] Reached max_pdfs={max_pdfs}, stopping early.")
+            break
 
     out_path = proc_dir / "parsed.json"
     with open(out_path, "w", encoding="utf-8") as f:
@@ -260,4 +287,4 @@ def extract_pdfs(directory_path: Path):
 
 
 if __name__ == "__main__":
-    extract_pdfs(get_rag2_config_path("raw"))
+    extract_pdfs(get_rag2_config_path("raw"), max_pdfs=50)
