@@ -101,8 +101,8 @@ class LLM:
             query = args.get("query", "")
             print(f"FUNCTION CALL: search_arxiv(query='{query}')")
             
-            # Get top 3 rag paper and combine
-            rag_results = self.rag_search.hybrid_search(query, 3)
+            # Get top x rag paper and combine
+            rag_results = self.rag_search.hybrid_search(query, 1)
             combined_text = ""
             for search_hit in rag_results["hits"]:
                 combined_text += search_hit.text + "\n\n"

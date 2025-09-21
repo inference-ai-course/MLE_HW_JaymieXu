@@ -67,10 +67,22 @@ def make_windows(token_ids: List[int], chunk_size: int, overlap_frac: float):
 
 def normalize_text(s: str) -> str:
     """Normalize text by collapsing whitespace and newlines"""
+    if not s or not s.strip():
+        return ""
+
+    # More aggressive text cleaning for better RAG
     s = s.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Remove excessive whitespace but preserve paragraph structure
     s = re.sub(r"[ \t\f\v]+", " ", s)
-    s = re.sub(r"\n{3,}", "\n\n", s).strip()
-    return s
+    s = re.sub(r"\n[ \t]*\n", "\n\n", s)  # Clean up paragraph breaks
+    s = re.sub(r"\n{3,}", "\n\n", s)      # Max 2 consecutive newlines
+
+    # Remove common academic paper artifacts
+    s = re.sub(r"arXiv:\d+\.\d+v?\d*", "", s)  # Remove arXiv IDs
+    s = re.sub(r"\[[\d\s,\-]+\]", "", s)       # Remove citation numbers like [1, 2-5]
+
+    return s.strip()
 
 
 def chunk_text_segment(tok, text: str, doc_id: str, segment_idx: int,
@@ -84,6 +96,10 @@ def chunk_text_segment(tok, text: str, doc_id: str, segment_idx: int,
     # Normalize text first
     text = normalize_text(text)
 
+    # Skip empty or very short segments
+    if len(text) < cfg.model.min_char:
+        return []
+
     ids = tokenize(tok, text)
     out = []
     cid = 0
@@ -92,14 +108,21 @@ def chunk_text_segment(tok, text: str, doc_id: str, segment_idx: int,
         piece_ids = ids[start:end]
         chunk_text = detokenize(tok, piece_ids).strip()
 
-        if len(chunk_text) < cfg.model.min_char:
+        # More strict filtering for better quality chunks
+        if (len(chunk_text) < cfg.model.min_char or
+            len(chunk_text.split()) < 8 or  # At least 8 words
+            chunk_text.count('.') == 0):    # Should have some sentence structure
             continue
+
+        # Add BGE-specific optimization: prefix for better retrieval
+        prefixed_text = f"passage: {chunk_text}"
 
         out.append({
             "chunk_id": f"{doc_id}::s{segment_idx}::c{cid}",
             "doc_id": doc_id,
             "page": segment_idx,  # Use segment index as "page"
-            "text": chunk_text,
+            "text": chunk_text,      # Store original text
+            "embed_text": prefixed_text,  # Text for embedding
         })
 
         cid += 1
@@ -133,7 +156,10 @@ def _iter_chunks() -> Iterator[tuple[str, dict[str, Any]]]:
         if not txt:
             continue
 
-        yield txt, {
+        # Use BGE-specific prefix for embedding
+        embed_text = f"passage: {txt}"
+
+        yield embed_text, {
             "chunk_id": row[1],
             "doc_id": row[2],
             "page": row[3],
@@ -228,13 +254,15 @@ def run_faiss():
         if not flush_buf_txt:
             return
 
-        # Generate embeddings
+        # Generate embeddings with BGE optimizations
         vecs = model.encode(
             flush_buf_txt,
             batch_size=cfg.model.batch,
             convert_to_numpy=True,
-            show_progress_bar=False,
+            show_progress_bar=True,  # Show progress for long operations
             normalize_embeddings=cfg.model.normalize,
+            convert_to_tensor=False,
+            device=model.device,
         ).astype("float32")
 
         # Initialize index on first batch

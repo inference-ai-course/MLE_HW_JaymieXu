@@ -14,13 +14,15 @@ from rank_bm25 import BM25Okapi
 
 script_dir = Path(__file__).resolve().parent
 
+RAG_VERSION = "rag2"
+
 EMBED_MODEL      = "sentence-transformers/all-MiniLM-L6-v2"
 MIN_SCORE        = 0.25 # Bullsh*t cut off score
 MIN_FTS_SCORE    = 0.1  # Minimum FTS5 relevance score
-MANIFEST_PATH    = Path(script_dir / "rag/data/index/manifest.json")
-FAISS_INDEX_PATH = Path(script_dir / "rag/data/index/faiss.index")
-SIDE_CAR_PATH    = Path(script_dir / "rag/data/index/chunk_meta.db")
-CHUNKS_OUT       = Path(script_dir / "rag/data/processed/chunks.db")
+MANIFEST_PATH    = Path(script_dir / RAG_VERSION / "data/index/manifest.json")
+FAISS_INDEX_PATH = Path(script_dir / RAG_VERSION / "data/index/faiss.index")
+SIDE_CAR_PATH    = Path(script_dir / RAG_VERSION / "data/index/chunk_meta.db")
+CHUNKS_OUT       = Path(script_dir / RAG_VERSION / "data/processed/chunks.db")
 
 # ---------------------------
 # Data classes (replacing Pydantic models)
@@ -307,6 +309,11 @@ def _keyword_search(query: str, k: int) -> List[Dict[str, Any]]:
     conn = sqlite3.connect(CHUNKS_OUT)
 
     try:
+        # Escape FTS5 special characters and quote the query
+        # Replace problematic characters and wrap in quotes for phrase search
+        escaped_query = query.replace('"', '""')  # Escape quotes
+        fts_query = f'"{escaped_query}"'  # Wrap in quotes for phrase search
+
         # Use FTS5 MATCH query with rank-based scoring
         cursor = conn.execute('''
             SELECT chunk_id, doc_id, text, rank AS fts_score
@@ -314,7 +321,7 @@ def _keyword_search(query: str, k: int) -> List[Dict[str, Any]]:
             WHERE chunks_fts MATCH ?
             ORDER BY rank
             LIMIT ?
-        ''', (query, k))
+        ''', (fts_query, k))
 
         results = []
         for row in cursor.fetchall():
