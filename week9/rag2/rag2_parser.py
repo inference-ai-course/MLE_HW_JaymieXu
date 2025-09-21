@@ -30,11 +30,53 @@ def normalize_text(s: str) -> str:
     s = s.replace("\r\n", "\n").replace("\r", "\n")
     s = s.replace(_soft_hyphen, "")  # remove soft hyphens if any
     s = _whitespace_re.sub(" ", s)
-    
+
     # collapse super-long runs of blank lines
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
-    
+
     return s
+
+
+def clean_rag_text(s: str) -> str:
+    """Enhanced text cleaning for better RAG performance"""
+    if not s or not s.strip():
+        return ""
+
+    # More aggressive text cleaning for better RAG
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Remove excessive whitespace but preserve paragraph structure
+    s = re.sub(r"[ \t\f\v]+", " ", s)
+    s = re.sub(r"\n[ \t]*\n", "\n\n", s)  # Clean up paragraph breaks
+    s = re.sub(r"\n{3,}", "\n\n", s)      # Max 2 consecutive newlines
+
+    # Remove common academic paper artifacts
+    s = re.sub(r"arXiv:\d+\.\d+v?\d*", "", s)  # Remove arXiv IDs
+    s = re.sub(r"\[[\d\s,\-]+\]", "", s)       # Remove citation numbers like [1, 2-5]
+
+    # Remove repeated punctuation patterns
+    s = re.sub(r";(\s*;)+", ";", s)  # Multiple semicolons: ; ; ; ; -> ;
+    s = re.sub(r",(\s*,)+", ",", s)  # Multiple commas: , , , , -> ,
+    s = re.sub(r"\.(\s*\.)+", ".", s)  # Multiple periods: . . . . -> .
+    s = re.sub(r"-(\s*-)+", "-", s)  # Multiple dashes: - - - - -> -
+
+    return s.strip()
+
+
+def is_text_suitable_for_rag(text: str, min_chars: int = 40, min_words: int = 8) -> bool:
+    """Check if text meets quality criteria for RAG indexing"""
+    if not text or len(text) < min_chars:
+        return False
+
+    # Check word count
+    if len(text.split()) < min_words:
+        return False
+
+    # Should have some sentence structure (at least one period)
+    if text.count('.') == 0:
+        return False
+
+    return True
 
 
 def _dehyphenate_lines(lines: List[str]) -> List[str]:
@@ -236,8 +278,13 @@ def extract_pages(pdf_path: Path) -> List[str]:
                 txt = normalize_text(txt)
             
             processed_text = anonymize_text(txt)
-            # skip any text that has figure its not useable
-            if not contains_figure_ref(processed_text):
+
+            # Apply enhanced RAG text cleaning
+            processed_text = clean_rag_text(processed_text)
+
+            # Skip text with figure references or that doesn't meet quality criteria
+            if (not contains_figure_ref(processed_text) and
+                is_text_suitable_for_rag(processed_text)):
                 pages.append(processed_text)
 
     return pages
@@ -272,6 +319,12 @@ def extract_pdfs(directory_path: Path, max_pdfs: int | None = None):
     for idx, pdf_path in enumerate(directory_path.iterdir(), start=1):
         print(f"[INFO] Processing {pdf_path.name} ...")
         pages = extract_pages(pdf_path)
+
+        # Skip PDFs that result in empty pages
+        if not pages:
+            print(f"[SKIP] {pdf_path.name} - no usable pages extracted")
+            continue
+
         results[pdf_path.stem] = pages
         print(f"[OK] Parsed {len(pages)} pages from {pdf_path.name}")
 

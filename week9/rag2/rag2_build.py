@@ -66,23 +66,15 @@ def make_windows(token_ids: List[int], chunk_size: int, overlap_frac: float):
 
 
 def normalize_text(s: str) -> str:
-    """Normalize text by collapsing whitespace and newlines"""
+    """Basic text normalization - main cleanup now done in parser"""
     if not s or not s.strip():
         return ""
 
-    # More aggressive text cleaning for better RAG
     s = s.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Remove excessive whitespace but preserve paragraph structure
     s = re.sub(r"[ \t\f\v]+", " ", s)
-    s = re.sub(r"\n[ \t]*\n", "\n\n", s)  # Clean up paragraph breaks
-    s = re.sub(r"\n{3,}", "\n\n", s)      # Max 2 consecutive newlines
+    s = re.sub(r"\n{3,}", "\n\n", s).strip()
 
-    # Remove common academic paper artifacts
-    s = re.sub(r"arXiv:\d+\.\d+v?\d*", "", s)  # Remove arXiv IDs
-    s = re.sub(r"\[[\d\s,\-]+\]", "", s)       # Remove citation numbers like [1, 2-5]
-
-    return s.strip()
+    return s
 
 
 def chunk_text_segment(tok, text: str, doc_id: str, segment_idx: int,
