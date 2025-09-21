@@ -287,4 +287,4 @@ def extract_pdfs(directory_path: Path, max_pdfs: int | None = None):
 
 
 if __name__ == "__main__":
-    extract_pdfs(get_rag2_config_path("raw"), max_pdfs=50)
+    extract_pdfs(get_rag2_config_path("raw"))
