@@ -26,6 +26,8 @@ Week8/pdf/train/*.pdf
 Week8/reward_model
 
 week9/rag/data
+week9/rag2/data
+week9/rag2/data_backup
 
 *.wav
 *.pdf
