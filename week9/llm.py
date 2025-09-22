@@ -105,12 +105,13 @@ class LLM:
             rag_results = self.rag_search.hybrid_search(query, 3)
             combined_text = ""
             for search_hit in rag_results["hits"]:
-                combined_text += self.summarizer.summarize(search_hit.text, 120)[0]["summary_text"]
+                print(f"HIT TEXT: {search_hit.text}")
+                combined_text += self.summarizer.summarize(search_hit.text, 100, 80)[0]["summary_text"] + "\n"
                 
             print(f"COMBINED TEXT: {combined_text}")
             
             # Sum
-            result = self.summarizer.summarize(combined_text, 120)[0]["summary_text"]
+            result = self.summarizer.summarize(combined_text, 120, 100)[0]["summary_text"]
 
             print(f"FUNCTION OUTPUT: {result}")
             print("Using tool: search_arxiv")
