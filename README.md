@@ -2,6 +2,8 @@ Hi there! 👋 Welcome to my Generative AI & Machine Learning Hub!
 
 This repository documents my journey through the Machine Learning Engineer in the Generative AI Era course — a hands-on, project-based exploration of cutting-edge AI tools and methods.
 
+### Project 3 - AI Cyber Security Assistant: https://github.com/JaymieX/JAA
+
 You'll find my work with:
 
 🧠 Large Language Models – Prompt engineering, transformers, fine-tuning, and alignment
