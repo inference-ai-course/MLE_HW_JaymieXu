@@ -1,6 +1,8 @@
-# RAG2 - Enhanced Document Search & Chat System
+# AI voice assistant with RAG
 
-A modern RAG (Retrieval-Augmented Generation) system that fetches academic papers from ArXiv, processes them with advanced text cleaning, and provides intelligent search capabilities through a chat interface.
+A AI voice assistant with RAG (Retrieval-Augmented Generation) system that fetches academic papers from ArXiv, processes them with advanced text cleaning, and provides intelligent search capabilities through a chat interface.
+
+![Demo](demo.mkv)
 
 ## Quick Start
 
