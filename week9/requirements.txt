@@ -22,6 +22,7 @@ chromadb
 
 # Voice
 openai-whisper
+coqui-tts
 
 # Optional: For better performance
 flash-attn
