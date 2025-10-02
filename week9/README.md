@@ -37,7 +37,7 @@ A voice-enabled cybersecurity assistant that combines conversational AI with spe
 Run the installation script to install all Python packages and build the RAG database:
 
 ```bash
-./llm/install.sh
+./install.sh
 ```
 
 This script will:
