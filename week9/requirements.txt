@@ -1,0 +1,27 @@
+# Core ML and AI
+transformers
+accelerate
+bitsandbytes
+
+# FastAPI server
+fastapi
+uvicorn
+python-multipart
+
+# Utilities
+dotenv
+notion-client
+
+# RAG
+llama-index
+llama-index-vector-stores-chroma
+llama-index-embeddings-fastembed
+llama-index-retrievers-bm25
+fastembed
+chromadb
+
+# Voice
+openai-whisper
+
+# Optional: For better performance
+flash-attn
