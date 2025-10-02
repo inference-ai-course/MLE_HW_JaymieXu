@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import sys
 from typing import IO
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -15,7 +16,7 @@ from llm import LLM, LLMProFile
 from tts_engine import TTSEngine
 
 
-is_local = True
+is_local = len(sys.argv) < 2 or sys.argv[1] != "server"
 
 
 @asynccontextmanager
