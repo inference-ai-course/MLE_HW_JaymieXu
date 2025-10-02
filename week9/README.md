@@ -1,229 +1,93 @@
-# AI voice assistant with RAG
-
-A AI voice assistant with RAG (Retrieval-Augmented Generation) system that fetches academic papers from ArXiv, processes them with advanced text cleaning, and provides intelligent search capabilities through a chat interface.
+# Project 2 - Cybersecurity Voice Agent
 
 ![Demo](demo.mkv)
 
-## Quick Start
+## Overview
 
-1. **Generate RAG Database** (follow order below)
-2. **Run the Server** with `python server_api.py`
-3. **Chat with your documents** through the web interface
+A voice-enabled cybersecurity assistant that combines conversational AI with speech recognition and synthesis. This agent is designed to help security professionals and developers interact with cybersecurity knowledge through natural voice conversations, providing access to security documentation and best practices.
 
----
+## Project Details
 
-## RAG2 Pipeline - Building Your Database
+### Core Technologies
 
-The `rag2/` folder contains scripts to build your RAG database. **Run these in order:**
+- **Language Model**: Built on Qwen2.5 7B with prompt engineering for conversational and tool-use capabilities
+- **RAG (Retrieval-Augmented Generation)**: Powered by LlamaIndex and ChromaDB for efficient retrieval of cybersecurity theory knowledge and documentation
+- **ASR (Automatic Speech Recognition)**: OpenAI Whisper for accurate speech-to-text conversion
+- **TTS (Text-to-Speech)**: Coqui TTS for natural voice synthesis
+- **Agent Architecture**: Unified agent with prompt engineering (no routing needed)
 
-### 1. Fetch Papers (`rag2/rag2_fetch.py`)
-Downloads research papers from ArXiv based on keywords.
+### Key Features
 
-```bash
-python rag2/rag2_fetch.py
-```
+- **Voice Interaction**: Natural voice input and output for hands-free operation
+- **Security Knowledge Base**: Access comprehensive cybersecurity theory through RAG
+- **Conversational AI**: Chat naturally while maintaining access to tools and knowledge
+- **Speech Recognition**: High-quality transcription with OpenAI Whisper
+- **Voice Synthesis**: Natural-sounding responses with Coqui TTS
 
-**What it does:**
-- Searches ArXiv by specific keywords (not categories)
-- Downloads papers from 2020+ only
-- Prevents duplicate downloads
-- Saves PDFs to `rag2/data/raw_pdfs/`
+## Installation & Setup
 
-**Features:**
-- ✅ Keyword-based search for better quality
-- ✅ Year filtering (2020+)
-- ✅ Duplicate prevention across keywords
-- ✅ Robust download with retry logic
+### Prerequisites
 
-### 2. Parse PDFs (`rag2/rag2_parser.py`)
-Extracts and cleans text from downloaded PDFs.
+- Python 3.10+
+- CUDA-capable GPU (recommended for faster inference)
+- Audio input/output devices for voice interaction
 
-```bash
-python rag2/rag2_parser.py
-```
+### Step 1: Install Dependencies and Build RAG Index
 
-**What it does:**
-- Extracts text from PDFs with layout awareness
-- Removes headers/footers and academic artifacts
-- Anonymizes sensitive information
-- Enhanced text cleaning (removes repeated punctuation, citations)
-- Filters out low-quality text (too short, figures, etc.)
-- Saves clean text to `rag2/data/processed/parsed.json`
-
-**Features:**
-- ✅ Smart PDF parsing with column detection
-- ✅ Text quality filtering
-- ✅ Academic artifact removal (arXiv IDs, citations)
-- ✅ Anonymization for privacy
-
-### 3. Build Search Index (`rag2/rag2_build.py`)
-Creates searchable embeddings and indexes.
+Run the installation script to install all Python packages and build the RAG database:
 
 ```bash
-python rag2/rag2_build.py
+./llm/install.sh
 ```
 
-**What it does:**
-- Chunks text into optimal sizes for BGE-large model
-- Creates FAISS vector index for semantic search
-- Builds FTS5 index for keyword search
-- Generates BM25 index for re-ranking
-- Saves indexes to `rag2/data/index/`
+This script will:
+1. Install all required Python packages from `requirements.txt`
+2. Build the RAG vector database from your knowledge base
 
-**Features:**
-- ✅ BGE-large optimized chunking (512 tokens)
-- ✅ Multiple search indexes (semantic + keyword + BM25)
-- ✅ Quality filtering at chunk level
-- ✅ BGE-specific prefixes for better embeddings
+### Step 2: Run the Backend Server
 
----
-
-## Configuration
-
-### RAG2 Settings (`rag2/rag2_config.toml`)
-Customize the RAG pipeline:
-
-```toml
-[model]
-embed_model  = "BAAI/bge-large-en-v1.5"
-chunk_size   = 512
-overlap_frac = 0.20
-min_char     = 40
-batch        = 8
-
-[search]
-min_score      = 0.25
-min_score_fts  = 0.1
-```
-
-### Keywords in Fetch Script
-Edit `rag2/rag2_fetch.py` to customize search terms:
-
-```python
-keywords = [
-    "machine learning security",
-    "zero-day vulnerability",
-    "blockchain security",
-    # Add your keywords here
-]
-```
-
----
-
-## Running the Server
-
-Start the chat server:
+Start the backend server with the Qwen2.5 7B model:
 
 ```bash
-python server_api.py
+python server_api.py server
 ```
 
-### Server Configuration
+This will load the model and start the API server on port 8000.
 
-**For Local Development:**
-```python
-is_local = True  # Uses localhost
-```
+### Step 3: Access the Frontend
 
-**For Server Deployment:**
-```python
-is_local = False  # Uses 0.0.0.0 for external access
-```
-
-### Server Features
-- 🌐 **Web Interface** - Chat with your documents
-- 🔍 **Hybrid Search** - Combines semantic + keyword + BM25
-- 🤖 **LLM Integration** - Qwen 2.5 models (3B/7B)
-- 📝 **Notion Integration** - Save conversations to Notion
-- ⚡ **Fast Response** - Optimized search and caching
-
----
-
-## Project Structure
+The frontend is served directly by the backend server. Once the server is running, access the application at:
 
 ```
-rag2/                           # New enhanced RAG system
-├── rag2_fetch.py              # Download papers from ArXiv
-├── rag2_parser.py             # Extract & clean text from PDFs
-├── rag2_build.py              # Build search indexes
-├── rag2_config.toml           # Configuration settings
-├── rag2_sql_util.py           # Database utilities
-└── data/                      # Generated data
-    ├── raw_pdfs/              # Downloaded PDFs
-    ├── processed/             # Cleaned text (parsed.json)
-    └── index/                 # Search indexes
-
-server_api.py                  # Main server application
-search.py                      # Search engine (semantic + hybrid)
-llm.py                         # LLM integration (Qwen models)
-notion.py                      # Notion integration
-summarize.py                   # Text summarization
+http://localhost:8000
 ```
 
----
+No separate frontend launch command is needed.
 
-## Usage Examples
+## Usage
 
-### Full Pipeline
-```bash
-# 1. Download papers
-python rag2/rag2_fetch.py
+Once the frontend is running, you can:
+- **Voice Mode**: Click the microphone button to speak your questions naturally
+- **Text Mode**: Type questions about cybersecurity concepts
+- **Knowledge Retrieval**: Query security documentation through the RAG system
+- **Tool Usage**: The agent can access tools while maintaining natural conversation
+- **Get assistance**: Receive help with security best practices and theory
 
-# 2. Parse PDFs
-python rag2/rag2_parser.py
+## Architecture
 
-# 3. Build indexes
-python rag2/rag2_build.py
-
-# 4. Start server
-python server_api.py
+```
+Voice Input → Whisper (ASR) → Qwen2.5 7B Agent → RAG Search Tools
+                                    ↓                    ↓
+                             Text Response ← Summerizer ← LlamaIndex/ChromaDB
+                                    ↓
+                            Coqui TTS (Voice Output)
 ```
 
-### Server Modes
-```python
-# Local development (localhost only)
-is_local = True
-
-# Server deployment (external access)
-is_local = False
-```
-
-### Chat Commands
-- "Search for papers about quantum computing"
-- "Save this conversation to Notion"
-- "Find research on zero-day vulnerabilities"
-
----
-
-## Requirements
-
-- Python 3.8+
-- PyTorch (with CUDA support recommended)
-- Dependencies: `transformers`, `sentence-transformers`, `faiss`, `pymupdf`, `fastapi`, `uvicorn`
+The agent uses prompt engineering to seamlessly handle both conversational queries and tool usage without needing separate routing logic.
 
 ## Notes
 
-- **GPU Recommended**: BGE-large model works much faster with CUDA
-- **Disk Space**: Each paper ~1-5MB, plan accordingly
-- **First Run**: Building indexes takes time, subsequent searches are fast
-- **Year Filter**: Currently set to 2020+, modify in `rag2_fetch.py` if needed
-
----
-
-## Advanced Usage
-
-### Custom Keywords
-Modify the keywords list in `rag2/rag2_fetch.py`:
-```python
-keywords = ["your", "custom", "research", "topics"]
-```
-
-### Adjust Quality Filters
-Edit `rag2/rag2_config.toml`:
-```toml
-min_char = 100      # Longer minimum text
-chunk_size = 256    # Smaller chunks
-```
-
-### Search Tuning
-Modify search parameters in the configuration for better results.
+- **GPU Memory**: The 7B model is lightweight and runs efficiently on consumer GPUs
+- **Audio Quality**: Better microphone quality improves speech recognition accuracy
+- **RAG Database**: Ensure the RAG database is built before running queries that require knowledge retrieval
+- **Port**: The application runs on port 8000 by default
